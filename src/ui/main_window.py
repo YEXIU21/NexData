@@ -18,7 +18,7 @@ warnings.filterwarnings('ignore')
 sns.set_style('whitegrid')
 
 
-class DataAnalystTool:
+class DataAnalystApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Professional Data Analysis Tool")
@@ -861,11 +861,4 @@ Created for E-commerce & Shopify Data Analysts
         messagebox.showinfo("About", about_text)
 
 
-def main():
-    root = tk.Tk()
-    app = DataAnalystTool(root)
-    root.mainloop()
-
-
-if __name__ == "__main__":
-    main()
+# Entry point moved to src/main.py following SEPARATION OF CONCERNS principle

@@ -525,4 +525,4 @@ This tool demonstrates expertise in:
 **Perfect for**: Shopify Data Analyst, E-commerce Analyst, Business Intelligence Analyst, Data Analyst roles
 
 **Version**: 2.0 Shopify Edition  
-**Last Updated**: 2024
+**Last Updated**: January 2025
