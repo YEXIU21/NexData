@@ -51,6 +51,11 @@ class DataAnalystApp:
         file_menu.add_separator()
         file_menu.add_command(label="Export CSV", command=self.export_csv)
         file_menu.add_command(label="Export Excel", command=self.export_excel)
+        file_menu.add_command(label="Export JSON", command=self.export_json)
+        file_menu.add_separator()
+        file_menu.add_command(label="Generate Executive Report (HTML)", command=self.generate_executive_report)
+        file_menu.add_command(label="Generate Quick Summary", command=self.generate_quick_summary)
+        file_menu.add_command(label="Format for Email", command=self.format_for_email)
         file_menu.add_separator()
         file_menu.add_command(label="Exit", command=self.root.quit)
         
@@ -1137,6 +1142,81 @@ class DataAnalystApp:
                 messagebox.showerror("Error", f"A/B test failed: {str(e)}")
         
         ttk.Button(dialog, text="Run A/B Test", command=run_ab_test).pack(pady=10)
+    
+    def generate_executive_report(self):
+        """Generate professional HTML executive report"""
+        if self.df is None:
+            messagebox.showwarning("Warning", "No data loaded!")
+            return
+        
+        from data_ops.report_generator import ReportGenerator
+        
+        file_path = filedialog.asksaveasfilename(
+            title="Save Executive Report",
+            defaultextension=".html",
+            filetypes=[("HTML files", "*.html"), ("All files", "*.*")]
+        )
+        
+        if file_path:
+            try:
+                success, report_path = ReportGenerator.generate_executive_summary(self.df, file_path)
+                if success:
+                    messagebox.showinfo("Success", f"Executive report generated!\n\n{report_path}\n\nOpen in browser to view.")
+                    self.update_status("✓ Executive report generated")
+                    # Try to open in browser
+                    import webbrowser
+                    webbrowser.open(report_path)
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to generate report:\n{str(e)}")
+    
+    def generate_quick_summary(self):
+        """Generate quick text summary"""
+        if self.df is None:
+            messagebox.showwarning("Warning", "No data loaded!")
+            return
+        
+        from data_ops.report_generator import ReportGenerator
+        
+        summary = ReportGenerator.generate_quick_summary_text(self.df)
+        
+        # Display in output
+        self.output_text.delete(1.0, tk.END)
+        self.output_text.insert(tk.END, summary)
+        self.notebook.select(0)
+        
+        # Also copy to clipboard
+        try:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(summary)
+            messagebox.showinfo("Success", "Quick summary generated and copied to clipboard!\n\nPaste into your document or email.")
+        except:
+            messagebox.showinfo("Success", "Quick summary generated!\n\nUse Copy button to copy to clipboard.")
+        
+        self.update_status("✓ Quick summary generated")
+    
+    def format_for_email(self):
+        """Format data summary for email"""
+        if self.df is None:
+            messagebox.showwarning("Warning", "No data loaded!")
+            return
+        
+        from data_ops.report_generator import EmailReportFormatter
+        
+        email_body = EmailReportFormatter.format_for_email(self.df)
+        
+        # Display in output
+        self.output_text.delete(1.0, tk.END)
+        self.output_text.insert(tk.END, email_body)
+        self.notebook.select(0)
+        
+        # Copy to clipboard
+        try:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(email_body)
+            messagebox.showinfo("Success", "Email format generated and copied to clipboard!\n\nPaste directly into your email.")
+            self.update_status("✓ Email format ready")
+        except:
+            messagebox.showinfo("Success", "Email format generated!")
     
     def show_guide(self):
         """Show quick start guide"""
