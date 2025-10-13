@@ -335,7 +335,7 @@ class DataAnalystApp:
         combo.pack(pady=5)
         
         def plot():
-            self.create_plot(lambda fig: self.df[col_var.get()].hist(ax=fig.gca(), bins=30, edgecolor='black'))
+            self.create_plot(lambda fig, ax: self.df[col_var.get()].hist(ax=ax, bins=30, edgecolor='black'))
             dialog.destroy()
         
         ttk.Button(dialog, text="Plot", command=plot).pack(pady=10)
@@ -350,7 +350,7 @@ class DataAnalystApp:
             messagebox.showwarning("Warning", "No numeric columns!")
             return
         
-        self.create_plot(lambda fig: self.df[numeric_cols].boxplot(ax=fig.gca()))
+        self.create_plot(lambda fig, ax: self.df[numeric_cols].boxplot(ax=ax))
     
     def plot_scatter(self):
         if self.df is None:
@@ -373,7 +373,7 @@ class DataAnalystApp:
         ttk.Combobox(dialog, textvariable=y_var, values=numeric_cols, state='readonly').pack()
         
         def plot():
-            self.create_plot(lambda fig: self.df.plot.scatter(x=x_var.get(), y=y_var.get(), ax=fig.gca(), alpha=0.6))
+            self.create_plot(lambda fig, ax: self.df.plot.scatter(x=x_var.get(), y=y_var.get(), ax=ax, alpha=0.6))
             dialog.destroy()
         
         ttk.Button(dialog, text="Plot", command=plot).pack(pady=10)
@@ -389,7 +389,7 @@ class DataAnalystApp:
             return
         
         corr = self.df[numeric_cols].corr()
-        self.create_plot(lambda fig: sns.heatmap(corr, annot=True, fmt='.2f', cmap='coolwarm', ax=fig.gca(), square=True))
+        self.create_plot(lambda fig, ax: sns.heatmap(corr, annot=True, fmt='.2f', cmap='coolwarm', ax=ax, square=True))
     
     def create_plot(self, plot_func):
         # Clear previous plot
@@ -401,9 +401,12 @@ class DataAnalystApp:
         fig = Figure(figsize=(12, 8), dpi=100)
         fig.patch.set_facecolor('white')
         
-        # Execute plot function
+        # Create axis BEFORE passing to plot function
+        ax = fig.add_subplot(111)
+        
+        # Execute plot function with figure AND axis
         try:
-            plot_func(fig)
+            plot_func(fig, ax)
         except Exception as e:
             messagebox.showerror("Plot Error", f"Failed to create plot:\n{str(e)}")
             return
@@ -445,8 +448,7 @@ class DataAnalystApp:
             col = col_var.get()
             value_counts = self.df[col].value_counts().head(10)
             
-            def plot_func(fig):
-                ax = fig.add_subplot(111)
+            def plot_func(fig, ax):
                 ax.pie(value_counts.values, labels=value_counts.index, autopct='%1.1f%%', startangle=90)
                 ax.set_title(f'Distribution of {col}', fontsize=14, fontweight='bold')
             
@@ -474,8 +476,7 @@ class DataAnalystApp:
         
         def plot():
             col = col_var.get()
-            def plot_func(fig):
-                ax = fig.add_subplot(111)
+            def plot_func(fig, ax):
                 self.df[col].hist(ax=ax, bins=30, alpha=0.7, edgecolor='black', density=True, label='Histogram')
                 self.df[col].plot(kind='kde', ax=ax, color='red', linewidth=2, label='KDE')
                 ax.set_title(f'Distribution of {col}', fontsize=14, fontweight='bold')
@@ -500,8 +501,7 @@ class DataAnalystApp:
             messagebox.showwarning("Warning", "No numeric columns!")
             return
         
-        def plot_func(fig):
-            ax = fig.add_subplot(111)
+        def plot_func(fig, ax):
             data_to_plot = [self.df[col].dropna() for col in numeric_cols[:6]]
             ax.violinplot(data_to_plot, showmeans=True, showmedians=True)
             ax.set_xticks(range(1, len(numeric_cols[:6]) + 1))
@@ -559,8 +559,7 @@ class DataAnalystApp:
             df_temp[date_col] = pd.to_datetime(df_temp[date_col])
             df_temp = df_temp.sort_values(date_col)
             
-            def plot_func(fig):
-                ax = fig.add_subplot(111)
+            def plot_func(fig, ax):
                 ax.plot(df_temp[date_col], df_temp[value_col], marker='o', linestyle='-', linewidth=2, markersize=4)
                 ax.set_title(f'Time Series: {value_col} over Time', fontsize=14, fontweight='bold')
                 ax.set_xlabel('Date')
