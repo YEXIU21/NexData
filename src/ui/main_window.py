@@ -67,11 +67,24 @@ class DataAnalystApp:
         clean_menu.add_command(label="Handle Missing Values", command=self.handle_missing_values)
         clean_menu.add_command(label="Remove Outliers", command=self.remove_outliers)
         
+        # Analysis menu
+        analysis_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Analysis", menu=analysis_menu)
+        analysis_menu.add_command(label="Column Analysis", command=self.column_analysis)
+        analysis_menu.add_command(label="Correlation Analysis", command=self.correlation_analysis)
+        analysis_menu.add_separator()
+        analysis_menu.add_command(label="Time Series Analysis", command=self.time_series_analysis)
+        analysis_menu.add_command(label="E-commerce Dashboard", command=self.ecommerce_dashboard)
+        
         viz_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Visualize", menu=viz_menu)
         viz_menu.add_command(label="Histogram", command=self.plot_histogram)
         viz_menu.add_command(label="Box Plot", command=self.plot_boxplot)
         viz_menu.add_command(label="Scatter Plot", command=self.plot_scatter)
+        viz_menu.add_command(label="Pie Chart", command=self.plot_pie)
+        viz_menu.add_separator()
+        viz_menu.add_command(label="Distribution Plot (KDE)", command=self.plot_distribution)
+        viz_menu.add_command(label="Violin Plot", command=self.plot_violin)
         viz_menu.add_command(label="Correlation Heatmap", command=self.plot_heatmap)
         
         help_menu = tk.Menu(menubar, tearoff=0)
