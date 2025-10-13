@@ -18,9 +18,11 @@ This guide explains how to build a single `.exe` file that can run on any Window
 
 ```bash
 # Windows
+cd build_scripts
 build.bat
 
 # Or use Python script
+cd build_scripts
 python build_exe.py
 ```
 

@@ -45,34 +45,35 @@ DATA_ANALYST_TOOL/
 │   ├── main.py                # Entry point
 │   ├── ui/                    # User interface components
 │   │   ├── __init__.py
-│   │   ├── main_window.py    # Main application window
-│   │   ├── dialogs.py        # Dialog windows
-│   │   └── styles.py         # UI styling
+│   │   └── main_window.py    # Main application window
 │   ├── data_ops/              # Data operations
 │   │   ├── __init__.py
 │   │   ├── import_export.py  # Import/Export functions
-│   │   ├── cleaning.py       # Data cleaning functions
-│   │   └── transformation.py # Data transformation
+│   │   └── cleaning.py       # Data cleaning functions
 │   ├── analysis/              # Analysis modules
 │   │   ├── __init__.py
 │   │   ├── statistics.py     # Statistical analysis
-│   │   ├── correlation.py    # Correlation analysis
 │   │   └── ecommerce.py      # E-commerce specific analysis
 │   └── visualization/         # Visualization modules
 │       ├── __init__.py
-│       ├── charts.py          # Chart creation
-│       └── plots.py           # Plot functions
+│       └── charts.py          # Chart creation
 │
 ├── docs/                       # Documentation
 │   ├── README.md              # Detailed documentation
 │   ├── DATA_ANALYST_WORKFLOW.md
-│   └── FEATURES_MAP.md
+│   ├── FEATURES_MAP.md
+│   ├── BUILD_INSTRUCTIONS.md
+│   └── FEATURES_CHECKLIST.md
 │
 ├── data/                       # Sample data
 │   └── sample_data.csv
 │
+├── build_scripts/             # Build scripts for EXE
+│   ├── build.bat             # Windows build script
+│   ├── build_exe.py          # Python build script
+│   └── README.md             # Build instructions
+│
 ├── requirements.txt           # Python dependencies
-├── infinity.py                # Task automation
 └── README.md                  # This file
 ```
 

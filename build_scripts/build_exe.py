@@ -9,7 +9,7 @@ import PyInstaller.__main__
 import os
 
 # Get absolute paths
-base_dir = os.path.dirname(os.path.abspath(__file__))
+base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # Go up one level from build_scripts
 main_script = os.path.join(base_dir, 'src', 'main.py')
 icon_path = os.path.join(base_dir, 'assets', 'icon.ico')  # Optional
 
