@@ -45,3 +45,8 @@ data/*.csv
 data/*.xlsx
 data/*.json
 !data/sample_data.csv
+
+# PyInstaller
+*.spec
+build/
+dist/
