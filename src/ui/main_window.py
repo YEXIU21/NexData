@@ -229,6 +229,19 @@ class DataAnalystApp:
             except Exception as e:
                 messagebox.showerror("Error", f"Export failed:\n{str(e)}")
     
+    def export_json(self):
+        if self.df is None:
+            messagebox.showwarning("Warning", "No data to export!")
+            return
+        file_path = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("JSON files", "*.json")])
+        if file_path:
+            try:
+                self.df.to_json(file_path, orient='records', indent=2)
+                messagebox.showinfo("Success", f"Exported to:\n{file_path}")
+                self.update_status(f"Exported to JSON")
+            except Exception as e:
+                messagebox.showerror("Error", f"Export failed:\n{str(e)}")
+    
     def view_data(self):
         if self.df is None:
             messagebox.showwarning("Warning", "No data loaded!")
