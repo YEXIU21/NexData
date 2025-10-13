@@ -335,7 +335,14 @@ class DataAnalystApp:
         combo.pack(pady=5)
         
         def plot():
-            self.create_plot(lambda fig, ax: self.df[col_var.get()].hist(ax=ax, bins=30, edgecolor='black'))
+            col = col_var.get()
+            def plot_func(fig, ax):
+                ax.hist(self.df[col].dropna(), bins=30, edgecolor='black', alpha=0.7)
+                ax.set_title(f'Distribution of {col}', fontsize=14, fontweight='bold')
+                ax.set_xlabel(col)
+                ax.set_ylabel('Frequency')
+                ax.grid(True, alpha=0.3)
+            self.create_plot(plot_func)
             dialog.destroy()
         
         ttk.Button(dialog, text="Plot", command=plot).pack(pady=10)
@@ -350,7 +357,15 @@ class DataAnalystApp:
             messagebox.showwarning("Warning", "No numeric columns!")
             return
         
-        self.create_plot(lambda fig, ax: self.df[numeric_cols].boxplot(ax=ax))
+        def plot_func(fig, ax):
+            data_to_plot = [self.df[col].dropna() for col in numeric_cols]
+            ax.boxplot(data_to_plot, labels=numeric_cols)
+            ax.set_title('Box Plot - Distribution Comparison', fontsize=14, fontweight='bold')
+            ax.set_ylabel('Values')
+            ax.grid(True, alpha=0.3, axis='y')
+            plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
+        
+        self.create_plot(plot_func)
     
     def plot_scatter(self):
         if self.df is None:
@@ -373,7 +388,15 @@ class DataAnalystApp:
         ttk.Combobox(dialog, textvariable=y_var, values=numeric_cols, state='readonly').pack()
         
         def plot():
-            self.create_plot(lambda fig, ax: self.df.plot.scatter(x=x_var.get(), y=y_var.get(), ax=ax, alpha=0.6))
+            x_col = x_var.get()
+            y_col = y_var.get()
+            def plot_func(fig, ax):
+                ax.scatter(self.df[x_col], self.df[y_col], alpha=0.6, s=50)
+                ax.set_title(f'{y_col} vs {x_col}', fontsize=14, fontweight='bold')
+                ax.set_xlabel(x_col)
+                ax.set_ylabel(y_col)
+                ax.grid(True, alpha=0.3)
+            self.create_plot(plot_func)
             dialog.destroy()
         
         ttk.Button(dialog, text="Plot", command=plot).pack(pady=10)
