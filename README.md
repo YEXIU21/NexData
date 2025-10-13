@@ -1,6 +1,18 @@
-# Professional Data Analysis Tool
+# Professional Data Analysis Tool - Shopify Edition
 
-A comprehensive GUI-based data analysis application built with Python for data analyst professionals.
+A comprehensive GUI-based data analysis application built with Python for data analyst professionals and Shopify/E-commerce analysts.
+
+📊 **[View Complete Workflow →](DATA_ANALYST_WORKFLOW.md)**  
+🗺️ **[View Features Map →](FEATURES_MAP.md)**
+
+## ✨ Key Highlights
+
+- **10+ Visualization Types** with interactive zoom/pan
+- **E-commerce Dashboard** for Shopify analytics
+- **Time Series Analysis** for sales trends
+- **Advanced Data Cleaning** with 5+ methods
+- **Real-time Statistics** panel
+- **Professional UI** with modern design
 
 ## Features
 
@@ -8,7 +20,8 @@ A comprehensive GUI-based data analysis application built with Python for data a
 - **Import**: CSV, Excel (.xlsx, .xls), JSON
 - **Export**: CSV, Excel, JSON
 - Automatic data type detection
-- Large file support
+- Multi-sheet Excel support
+- Large file support (>100MB)
 
 ### 🧹 Data Cleaning
 - **Remove Duplicates**: Automatically detect and remove duplicate rows
@@ -29,9 +42,24 @@ A comprehensive GUI-based data analysis application built with Python for data a
 - **Histogram**: Distribution analysis for numeric columns
 - **Box Plot**: Visualize data spread and outliers
 - **Scatter Plot**: Relationship between two variables
+- **Bar Chart**: Category comparisons
+- **Line Chart**: Trends over time
+- **Pie Chart**: Composition analysis
 - **Correlation Heatmap**: Analyze correlations between numeric features
-- Interactive matplotlib-based plots
+- **Distribution Plot**: Histogram with KDE curve
+- **Violin Plot**: Distribution comparison
+- Interactive matplotlib-based plots with zoom/pan
+- Navigation toolbar for advanced controls
 - Export plot capabilities
+
+### 🛍️ E-commerce/Shopify Features
+- **E-commerce Dashboard**: Quick insights for online store data
+- **Time Series Analysis**: Analyze sales trends over time
+- **Revenue Analysis**: Automatic detection of revenue columns
+- **Customer Insights**: Unique customer tracking
+- **Column Analysis**: Deep dive into specific metrics
+- **Sort Data**: Order by any column
+- **Data Type Conversion**: Convert to datetime for time-based analysis
 
 ### 🎨 User Interface
 - Modern GUI with ttk styling
