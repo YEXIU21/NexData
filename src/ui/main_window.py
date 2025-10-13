@@ -537,8 +537,14 @@ class DataAnalystApp:
         def plot():
             col = col_var.get()
             def plot_func(fig, ax):
-                self.df[col].hist(ax=ax, bins=30, alpha=0.7, edgecolor='black', density=True, label='Histogram')
-                self.df[col].plot(kind='kde', ax=ax, color='red', linewidth=2, label='KDE')
+                data = self.df[col].dropna()
+                # Histogram using matplotlib
+                ax.hist(data, bins=30, alpha=0.7, edgecolor='black', density=True, label='Histogram')
+                # KDE using scipy
+                from scipy.stats import gaussian_kde
+                kde = gaussian_kde(data)
+                x_range = np.linspace(data.min(), data.max(), 200)
+                ax.plot(x_range, kde(x_range), color='red', linewidth=2, label='KDE')
                 ax.set_title(f'Distribution of {col}', fontsize=14, fontweight='bold')
                 ax.set_xlabel(col)
                 ax.set_ylabel('Density')
