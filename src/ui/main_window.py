@@ -17,6 +17,9 @@ import warnings
 warnings.filterwarnings('ignore')
 sns.set_style('whitegrid')
 
+# Import theme manager
+from ui.theme_manager import ThemeManager
+
 
 class DataAnalystApp:
     def __init__(self, root):
@@ -29,10 +32,18 @@ class DataAnalystApp:
         self.original_df = None
         self.file_path = None
         
+        # Initialize theme manager
+        self.theme_manager = ThemeManager(self.root)
+        
         self.setup_styles()
         self.create_menu()
         self.create_ui()
         
+        # Apply default system theme
+        self.theme_manager.apply_theme('system')
+        
+        self.update_status("Ready")
+
     def setup_styles(self):
         style = ttk.Style()
         style.theme_use('clam')
@@ -97,6 +108,15 @@ class DataAnalystApp:
         viz_menu.add_command(label="Distribution Plot (KDE)", command=self.plot_distribution)
         viz_menu.add_command(label="Violin Plot", command=self.plot_violin)
         viz_menu.add_command(label="Correlation Heatmap", command=self.plot_heatmap)
+        
+        # View menu for themes
+        view_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="View", menu=view_menu)
+        theme_menu = tk.Menu(view_menu, tearoff=0)
+        view_menu.add_cascade(label="Theme", menu=theme_menu)
+        theme_menu.add_command(label="System Default", command=lambda: self.change_theme('system'))
+        theme_menu.add_command(label="Light Mode", command=lambda: self.change_theme('light'))
+        theme_menu.add_command(label="Dark Mode", command=lambda: self.change_theme('dark'))
         
         help_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Help", menu=help_menu)
@@ -1273,6 +1293,13 @@ Ctrl+F - Filter Data
 Ctrl+E - Export Data
 """
         messagebox.showinfo("Keyboard Shortcuts", shortcuts)
+    
+    def change_theme(self, theme_name):
+        """Change application theme"""
+        self.theme_manager.apply_theme(theme_name)
+        theme_display = self.theme_manager.get_theme_display_name(theme_name)
+        self.update_status(f"Theme changed to: {theme_display}")
+        messagebox.showinfo("Theme Changed", f"Theme set to: {theme_display}\n\nSome elements may require restart for full effect.")
     
     def show_about(self):
         about_text = """Professional Data Analysis Tool v2.0 - Shopify Edition
