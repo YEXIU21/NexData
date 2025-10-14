@@ -1582,7 +1582,25 @@ DATA COMPARISON:
 
 For detailed tutorials: Help > User Guide & Tutorials
 """
-        messagebox.showinfo("Quick Start Guide", quick_start)
+        
+        # Create scrollable window instead of messagebox
+        quick_window = tk.Toplevel(self.root)
+        quick_window.title("NexData - Quick Start Guide")
+        quick_window.geometry("700x600")
+        
+        # Add scrolled text widget
+        text_widget = scrolledtext.ScrolledText(quick_window, wrap=tk.WORD, font=('Arial', 11))
+        text_widget.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
+        text_widget.insert(1.0, quick_start)
+        text_widget.config(state='disabled')  # Read-only
+        
+        # Add close button
+        btn_frame = ttk.Frame(quick_window)
+        btn_frame.pack(pady=10)
+        ttk.Button(btn_frame, text="Close", command=quick_window.destroy, width=15).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Open Full Guide", command=self.show_user_guide, width=15).pack(side=tk.LEFT, padx=5)
+        
+        self.update_status("Quick Start Guide opened")
     
     def show_about(self):
         about_text = """NexData v3.0 - Professional Data Analysis
