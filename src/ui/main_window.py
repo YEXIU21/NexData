@@ -1312,23 +1312,25 @@ Created for E-commerce & Shopify Data Analysts
 ✨ Features:
 • Data Import/Export (CSV, Excel, JSON)
 • Advanced Data Cleaning
-• Statistical Analysis
+• Statistical Analysis & A/B Testing
 • Time Series Analysis
 • E-commerce Dashboard
 • 10+ Visualization Types
-• Interactive Charts with Zoom/Pan
+• SQL Query Interface
+• Theme Support (Light/Dark)
 
 🎯 Perfect for analyzing:
-- Sales trends
+- Sales trends & Revenue metrics
 - Customer behavior
 - Product performance
-- Revenue metrics
+- Campaign effectiveness
+
+👨‍💻 Developed by: YEXIU21
 
 © 2025 NexData - Built with Python, Pandas, Matplotlib
-
 Next-Generation Data Analytics"""
         
-        messagebox.showinfo("About", about_text)
+        messagebox.showinfo("About NexData", about_text)
 
 
 # Entry point moved to src/main.py following SEPARATION OF CONCERNS principle
