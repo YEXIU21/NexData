@@ -924,7 +924,10 @@ class DataAnalystApp:
                 result_text.insert(tk.END, f"Rows returned: {len(result_df)}\n\n")
                 result_text.insert(tk.END, result_df.to_string())
         
-        ttk.Button(dialog, text="Execute Query", command=execute).pack(pady=10)
+        # Button in centered frame for consistent positioning
+        btn_frame = ttk.Frame(dialog)
+        btn_frame.pack(pady=10)
+        ttk.Button(btn_frame, text="Execute Query", command=execute, width=15).pack()
         
         self.update_status("SQL Query interface opened")
     
