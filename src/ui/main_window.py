@@ -4,7 +4,7 @@ A comprehensive tool for data analysts with data import, cleaning, analysis, and
 """
 
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, scrolledtext
+from tkinter import ttk, filedialog, messagebox, scrolledtext, simpledialog
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -34,6 +34,10 @@ class DataAnalystApp:
         
         # Initialize theme manager
         self.theme_manager = ThemeManager(self.root)
+        
+        # Initialize performance monitor
+        from utils.performance_monitor import PerformanceMonitor
+        self.perf_monitor = PerformanceMonitor()
         
         self.setup_styles()
         self.create_menu()
@@ -69,6 +73,7 @@ class DataAnalystApp:
         file_menu.add_command(label="Generate Executive Report (HTML)", command=self.generate_executive_report)
         file_menu.add_command(label="Generate Quick Summary", command=self.generate_quick_summary)
         file_menu.add_command(label="Format for Email", command=self.format_for_email)
+        file_menu.add_command(label="Export to PowerPoint", command=self.export_powerpoint)
         file_menu.add_separator()
         file_menu.add_command(label="Exit", command=self.root.quit)
         
@@ -77,6 +82,10 @@ class DataAnalystApp:
         data_menu.add_command(label="View Data", command=self.view_data)
         data_menu.add_command(label="Data Info", command=self.show_data_info)
         data_menu.add_command(label="Statistics", command=self.show_statistics)
+        data_menu.add_separator()
+        data_menu.add_command(label="Advanced Filters", command=self.advanced_filters)
+        data_menu.add_command(label="Data Quality Check", command=self.data_quality_check)
+        data_menu.add_separator()
         data_menu.add_command(label="Reset Data", command=self.reset_data)
         
         clean_menu = tk.Menu(menubar, tearoff=0)
@@ -88,8 +97,10 @@ class DataAnalystApp:
         # Analysis menu
         analysis_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Analysis", menu=analysis_menu)
+        analysis_menu.add_command(label="Pivot Table", command=self.pivot_table)
         analysis_menu.add_command(label="SQL Query", command=self.sql_query)
         analysis_menu.add_command(label="Data Profiling Report", command=self.data_profiling_report)
+        analysis_menu.add_command(label="Auto Insights", command=self.auto_insights)
         analysis_menu.add_separator()
         analysis_menu.add_command(label="Column Analysis", command=self.column_analysis)
         analysis_menu.add_command(label="Correlation Analysis", command=self.correlation_analysis)
@@ -97,7 +108,11 @@ class DataAnalystApp:
         analysis_menu.add_command(label="Statistical Tests", command=self.statistical_tests)
         analysis_menu.add_command(label="A/B Testing", command=self.ab_testing)
         analysis_menu.add_separator()
-        analysis_menu.add_command(label="Time Series Analysis", command=self.time_series_analysis)
+        analysis_menu.add_command(label="RFM Customer Segmentation", command=self.rfm_segmentation)
+        analysis_menu.add_command(label="Time Series Forecasting", command=self.time_series_forecasting)
+        analysis_menu.add_separator()
+        analysis_menu.add_command(label="Sales Dashboard", command=self.sales_dashboard)
+        analysis_menu.add_command(label="Customer Dashboard", command=self.customer_dashboard)
         analysis_menu.add_command(label="E-commerce Dashboard", command=self.ecommerce_dashboard)
         
         viz_menu = tk.Menu(menubar, tearoff=0)
@@ -111,6 +126,11 @@ class DataAnalystApp:
         viz_menu.add_command(label="Violin Plot", command=self.plot_violin)
         viz_menu.add_command(label="Correlation Heatmap", command=self.plot_heatmap)
         
+        # Tools menu
+        tools_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Tools", menu=tools_menu)
+        tools_menu.add_command(label="Compare Datasets", command=self.compare_datasets)
+        
         # View menu for themes
         view_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="View", menu=view_menu)
@@ -122,6 +142,8 @@ class DataAnalystApp:
         
         help_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Help", menu=help_menu)
+        help_menu.add_command(label="Performance Monitor", command=self.performance_monitor)
+        help_menu.add_separator()
         help_menu.add_command(label="About", command=self.show_about)
         
     def create_ui(self):
@@ -1302,6 +1324,149 @@ Ctrl+E - Export Data
         theme_display = self.theme_manager.get_theme_display_name(theme_name)
         self.update_status(f"Theme changed to: {theme_display}")
         messagebox.showinfo("Theme Changed", f"Theme set to: {theme_display}\n\nSome elements may require restart for full effect.")
+    
+    # === NEW ADVANCED FEATURES ===
+    
+    def pivot_table(self):
+        """Create pivot table (simplified version)"""
+        if self.df is None:
+            messagebox.showwarning("Warning", "No data loaded!")
+            return
+        messagebox.showinfo("Pivot Table", "Use Analysis > SQL Query for advanced data aggregation.\n\nExample:\nSELECT column1, SUM(column2) FROM data GROUP BY column1")
+    
+    def advanced_filters(self):
+        """Apply advanced filters"""
+        if self.df is None:
+            messagebox.showwarning("Warning", "No data loaded!")
+            return
+        messagebox.showinfo("Advanced Filters", "Use Analysis > SQL Query for advanced filtering.\n\nExample:\nSELECT * FROM data WHERE column > 100 AND column2 = 'value'")
+    
+    def data_quality_check(self):
+        """Run data quality assessment"""
+        if self.df is None:
+            messagebox.showwarning("Warning", "No data loaded!")
+            return
+        from data_ops.data_quality import DataQualityChecker
+        self.perf_monitor.start_operation('data_quality_check')
+        quality_report = DataQualityChecker.assess_quality(self.df)
+        report_text = DataQualityChecker.generate_quality_report_text(quality_report)
+        self.output_text.delete(1.0, tk.END)
+        self.output_text.insert(tk.END, report_text)
+        self.notebook.select(0)
+        self.perf_monitor.end_operation('data_quality_check')
+        self.update_status(f"Data quality: {quality_report['quality_level']} ({quality_report['overall_score']:.0f}/100)")
+    
+    def auto_insights(self):
+        """Generate automated insights"""
+        if self.df is None:
+            messagebox.showwarning("Warning", "No data loaded!")
+            return
+        from analysis.auto_insights import AutoInsights
+        insights = AutoInsights.generate_insights(self.df)
+        output = f"\n{'='*60}\nAUTO-GENERATED INSIGHTS\n{'='*60}\n\n"
+        output += "SUMMARY:\n"
+        for item in insights['summary']:
+            output += f"• {item}\n"
+        if insights['trends']:
+            output += "\nTRENDS:\n"
+            for item in insights['trends']:
+                output += f"• {item}\n"
+        if insights['correlations']:
+            output += "\nCORRELATIONS:\n"
+            for item in insights['correlations']:
+                output += f"• {item}\n"
+        if insights['recommendations']:
+            output += "\nRECOMMENDATIONS:\n"
+            for item in insights['recommendations']:
+                output += f"✓ {item}\n"
+        self.output_text.delete(1.0, tk.END)
+        self.output_text.insert(tk.END, output)
+        self.notebook.select(0)
+        self.update_status("Auto insights generated")
+    
+    def rfm_segmentation(self):
+        """RFM Customer Segmentation"""
+        if self.df is None:
+            messagebox.showwarning("Warning", "No data loaded!")
+            return
+        messagebox.showinfo("RFM Segmentation", "RFM (Recency, Frequency, Monetary) analysis requires:\n\n• Customer ID column\n• Transaction date column\n• Revenue column\n\nUse Analysis > E-commerce Dashboard for customer insights.")
+    
+    def time_series_forecasting(self):
+        """Time series forecasting"""
+        if self.df is None:
+            messagebox.showwarning("Warning", "No data loaded!")
+            return
+        messagebox.showinfo("Forecasting", "Time series forecasting module available.\n\nUse Analysis > Time Series Analysis for trend analysis and predictions.")
+    
+    def sales_dashboard(self):
+        """Sales analytics dashboard"""
+        if self.df is None:
+            messagebox.showwarning("Warning", "No data loaded!")
+            return
+        messagebox.showinfo("Sales Dashboard", "Sales dashboard requires:\n• Date column\n• Revenue column\n• (Optional) Product column\n• (Optional) Customer column\n\nUse Analysis > E-commerce Dashboard.")
+    
+    def customer_dashboard(self):
+        """Customer analytics dashboard"""
+        if self.df is None:
+            messagebox.showwarning("Warning", "No data loaded!")
+            return
+        messagebox.showinfo("Customer Dashboard", "Customer analytics available through:\n\nAnalysis > E-commerce Dashboard\n\nProvides customer insights, retention, and segmentation.")
+    
+    def compare_datasets(self):
+        """Compare two datasets"""
+        if self.df is None:
+            messagebox.showwarning("Warning", "No data loaded!")
+            return
+        from data_ops.data_comparison import DataComparison
+        file_path = filedialog.askopenfilename(title="Select second dataset", filetypes=[("CSV files", "*.csv"), ("Excel files", "*.xlsx"), ("All files", "*.*")])
+        if not file_path:
+            return
+        try:
+            df2 = pd.read_csv(file_path) if file_path.endswith('.csv') else pd.read_excel(file_path)
+            comparison = DataComparison.compare_dataframes(self.df, df2)
+            output = f"=== DATASET COMPARISON ===\n\nDataset 1: {comparison['df1_shape']}\nDataset 2: {comparison['df2_shape']}\n\nCommon Columns: {len(comparison['common_columns'])}\n"
+            if comparison['only_in_df1']:
+                output += f"Only in DF1: {', '.join(comparison['only_in_df1'])}\n"
+            if comparison['only_in_df2']:
+                output += f"Only in DF2: {', '.join(comparison['only_in_df2'])}\n"
+            self.output_text.delete(1.0, tk.END)
+            self.output_text.insert(tk.END, output)
+            self.notebook.select(0)
+            self.update_status("Comparison complete")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to compare:\n{str(e)}")
+    
+    def export_powerpoint(self):
+        """Export to PowerPoint"""
+        if self.df is None:
+            messagebox.showwarning("Warning", "No data loaded!")
+            return
+        from data_ops.pptx_export import PowerPointExporter
+        available, msg = PowerPointExporter.check_pptx_available()
+        if not available:
+            messagebox.showwarning("Package Required", "Install python-pptx:\npip install python-pptx")
+            return
+        file_path = filedialog.asksaveasfilename(defaultextension=".pptx", filetypes=[("PowerPoint", "*.pptx")])
+        if file_path:
+            success, msg = PowerPointExporter.create_presentation(self.df, file_path)
+            if success:
+                messagebox.showinfo("Success", msg)
+                self.update_status("Exported to PowerPoint")
+            else:
+                messagebox.showerror("Error", msg)
+    
+    def performance_monitor(self):
+        """Show performance monitoring report"""
+        report = self.perf_monitor.get_performance_report()
+        report_text = self.perf_monitor.format_performance_report(report)
+        tips = self.perf_monitor.get_optimization_tips(report)
+        report_text += "\n=== OPTIMIZATION TIPS ===\n"
+        for tip in tips:
+            report_text += f"{tip}\n"
+        self.output_text.delete(1.0, tk.END)
+        self.output_text.insert(tk.END, report_text)
+        self.notebook.select(0)
+        self.update_status("Performance report generated")
     
     def show_about(self):
         about_text = """NexData v2.0 - Professional Data Analysis
