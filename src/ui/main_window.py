@@ -898,6 +898,12 @@ class DataAnalystApp:
         query_text.pack(pady=5)
         query_text.insert(tk.END, "SELECT * FROM data LIMIT 20")
         
+        # Result display
+        result_label = ttk.Label(dialog, text="Results:")
+        result_label.pack(pady=5)
+        result_text = scrolledtext.ScrolledText(dialog, height=15, width=90)
+        result_text.pack(pady=5)
+        
         def execute():
             query = query_text.get(1.0, tk.END).strip()
             
@@ -918,17 +924,7 @@ class DataAnalystApp:
                 result_text.insert(tk.END, f"Rows returned: {len(result_df)}\n\n")
                 result_text.insert(tk.END, result_df.to_string())
         
-        # Execute button (centered and styled)
-        button_frame = ttk.Frame(dialog)
-        button_frame.pack(pady=10)
-        execute_btn = ttk.Button(button_frame, text="▶ Execute Query", command=execute, width=20)
-        execute_btn.pack()
-        
-        # Result display
-        result_label = ttk.Label(dialog, text="Results:")
-        result_label.pack(pady=5)
-        result_text = scrolledtext.ScrolledText(dialog, height=12, width=90)
-        result_text.pack(pady=5, fill=tk.BOTH, expand=True)
+        ttk.Button(dialog, text="Execute Query", command=execute).pack(pady=10)
         
         self.update_status("SQL Query interface opened")
     
