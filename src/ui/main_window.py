@@ -1331,11 +1331,147 @@ Ctrl+E - Export Data
     # === NEW ADVANCED FEATURES ===
     
     def pivot_table(self):
-        """Create pivot table (simplified version)"""
+        """Create pivot table guide"""
         if self.df is None:
             messagebox.showwarning("Warning", "No data loaded!")
             return
-        messagebox.showinfo("Pivot Table", "Use Analysis > SQL Query for advanced data aggregation.\n\nExample:\nSELECT column1, SUM(column2) FROM data GROUP BY column1")
+        
+        # Create a helpful window with examples
+        pivot_window = tk.Toplevel(self.root)
+        pivot_window.title("Pivot Table - How to Use")
+        pivot_window.geometry("750x650")
+        
+        content = """PIVOT TABLES in NexData
+
+🎯 WHAT IS A PIVOT TABLE?
+A pivot table summarizes data by grouping and aggregating.
+
+Example: Summarize employee salaries by department
+
+ORIGINAL DATA:
+Name          | Department   | Salary
+John Doe      | Sales        | 55000
+Jane Smith    | Engineering  | 75000
+Bob Johnson   | Sales        | 65000
+
+PIVOT TABLE RESULT:
+Department   | Average Salary | Count
+Sales        | 60,000         | 2
+Engineering  | 75,000         | 1
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+💡 HOW TO CREATE IN NEXDATA:
+
+Use Analysis > SQL Query (MORE POWERFUL than traditional pivot tables!)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📝 EXAMPLE QUERIES FOR YOUR DATA:
+
+1. BASIC PIVOT - Average by Group:
+SELECT Department, 
+       AVG(Salary) as Avg_Salary,
+       COUNT(*) as Count
+FROM data
+GROUP BY Department
+
+2. SUM BY CATEGORY:
+SELECT Department, 
+       SUM(Salary) as Total_Salary
+FROM data
+GROUP BY Department
+
+3. MULTIPLE AGGREGATIONS:
+SELECT Department,
+       AVG(Salary) as Avg_Salary,
+       MIN(Salary) as Min_Salary,
+       MAX(Salary) as Max_Salary,
+       COUNT(*) as Employees
+FROM data
+GROUP BY Department
+ORDER BY Avg_Salary DESC
+
+4. PIVOT WITH FILTERING:
+SELECT Department,
+       AVG(Salary) as Avg_Salary
+FROM data
+WHERE Experience > 5
+GROUP BY Department
+
+5. TRUE PIVOT (Columns from Rows):
+SELECT 
+    CASE WHEN Experience < 3 THEN 'Junior'
+         WHEN Experience < 8 THEN 'Mid'
+         ELSE 'Senior' END as Level,
+    AVG(CASE WHEN Department='Sales' THEN Salary END) as Sales,
+    AVG(CASE WHEN Department='Engineering' THEN Salary END) as Engineering,
+    AVG(CASE WHEN Department='Marketing' THEN Salary END) as Marketing
+FROM data
+GROUP BY Level
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ TO EXPORT RESULTS:
+1. Run SQL Query
+2. Results appear in Output tab
+3. Copy (Ctrl+A then Ctrl+C)
+4. Paste into Excel or Google Sheets
+
+OR generate HTML report: File > Generate Executive Report
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+💡 TIPS:
+• Replace "Department" with your column name
+• Replace "Salary" with the column you want to aggregate
+• Table name is always "data" (lowercase)
+• Check Dataset Info panel for exact column names
+• Start simple, then add complexity
+
+🆘 MORE HELP:
+• Help > User Guide & Tutorials
+• docs/PIVOT_SQL_GUIDE.md (detailed guide)
+"""
+        
+        # Add scrolled text widget
+        text_widget = scrolledtext.ScrolledText(pivot_window, wrap=tk.WORD, font=('Courier', 10))
+        text_widget.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
+        text_widget.insert(1.0, content)
+        text_widget.config(state='disabled')  # Read-only
+        
+        # Add buttons
+        btn_frame = ttk.Frame(pivot_window)
+        btn_frame.pack(pady=10)
+        ttk.Button(btn_frame, text="Open SQL Query", command=lambda: [pivot_window.destroy(), self.sql_query()], width=18).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="View Full Guide", command=self.show_pivot_guide, width=18).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Close", command=pivot_window.destroy, width=12).pack(side=tk.LEFT, padx=5)
+        
+        self.update_status("Pivot table guide opened")
+    
+    def show_pivot_guide(self):
+        """Show comprehensive pivot/SQL guide"""
+        try:
+            guide_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'docs', 'PIVOT_SQL_GUIDE.md')
+            if os.path.exists(guide_path):
+                with open(guide_path, 'r', encoding='utf-8') as f:
+                    guide_content = f.read()
+                
+                guide_window = tk.Toplevel(self.root)
+                guide_window.title("Pivot Tables & SQL Query - Complete Guide")
+                guide_window.geometry("950x750")
+                
+                text_widget = scrolledtext.ScrolledText(guide_window, wrap=tk.WORD, font=('Courier', 10))
+                text_widget.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+                text_widget.insert(1.0, guide_content)
+                text_widget.config(state='disabled')
+                
+                ttk.Button(guide_window, text="Close", command=guide_window.destroy).pack(pady=5)
+                self.update_status("Pivot/SQL guide opened")
+            else:
+                messagebox.showinfo("Guide", "Guide file not found.\n\nUse Analysis > SQL Query to create pivot tables.")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to open guide:\n{str(e)}")
     
     def advanced_filters(self):
         """Apply advanced filters"""
