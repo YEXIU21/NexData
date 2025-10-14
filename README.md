@@ -1,6 +1,10 @@
-# Professional Data Analysis Tool - Shopify Edition
+# NexData - Next-Generation Data Analysis Tool
+
+### Shopify Edition v2.0
 
 A comprehensive GUI-based data analysis application built with Python for data analyst professionals and Shopify/E-commerce analysts.
+
+**Next-Generation Analytics Made Simple**
 
 ## 📚 Documentation
 
@@ -155,4 +159,5 @@ Created for Shopify Data Analyst job applications.
 
 ---
 
-**© 2025 - Built with ❤️ for Data Analysis**
+**© 2025 NexData - Next-Generation Data Analytics**  
+Built with ❤️ for Data Analysts

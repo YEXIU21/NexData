@@ -24,7 +24,7 @@ from ui.theme_manager import ThemeManager
 class DataAnalystApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Professional Data Analysis Tool")
+        self.root.title("NexData - Professional Data Analysis Tool")
         self.root.geometry("1400x900")
         self.root.configure(bg="#f0f0f0")
         
@@ -125,7 +125,7 @@ class DataAnalystApp:
     def create_ui(self):
         title_frame = ttk.Frame(self.root)
         title_frame.pack(fill=tk.X, padx=10, pady=10)
-        ttk.Label(title_frame, text="Professional Data Analysis Tool", style='Title.TLabel').pack()
+        ttk.Label(title_frame, text="NexData - Professional Data Analysis", style='Title.TLabel').pack()
         
         self.main_paned = ttk.PanedWindow(self.root, orient=tk.HORIZONTAL)
         self.main_paned.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
@@ -1302,7 +1302,8 @@ Ctrl+E - Export Data
         messagebox.showinfo("Theme Changed", f"Theme set to: {theme_display}\n\nSome elements may require restart for full effect.")
     
     def show_about(self):
-        about_text = """Professional Data Analysis Tool v2.0 - Shopify Edition
+        about_text = """NexData v2.0 - Professional Data Analysis
+Shopify Edition
 
 Created for E-commerce & Shopify Data Analysts
 
@@ -1321,7 +1322,9 @@ Created for E-commerce & Shopify Data Analysts
 - Product performance
 - Revenue metrics
 
-© 2025 - Built with Python, Pandas, Matplotlib"""
+© 2025 NexData - Built with Python, Pandas, Matplotlib
+
+Next-Generation Data Analytics"""
         
         messagebox.showinfo("About", about_text)
 
