@@ -142,6 +142,9 @@ class DataAnalystApp:
         
         help_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Help", menu=help_menu)
+        help_menu.add_command(label="User Guide & Tutorials", command=self.show_user_guide)
+        help_menu.add_command(label="Quick Start Guide", command=self.show_quick_start)
+        help_menu.add_separator()
         help_menu.add_command(label="Performance Monitor", command=self.performance_monitor)
         help_menu.add_separator()
         help_menu.add_command(label="About", command=self.show_about)
@@ -1468,34 +1471,157 @@ Ctrl+E - Export Data
         self.notebook.select(0)
         self.update_status("Performance report generated")
     
+    def show_user_guide(self):
+        """Display comprehensive user guide"""
+        try:
+            guide_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'docs', 'USER_GUIDE.md')
+            if os.path.exists(guide_path):
+                with open(guide_path, 'r', encoding='utf-8') as f:
+                    guide_content = f.read()
+                
+                # Create a new window for the guide
+                guide_window = tk.Toplevel(self.root)
+                guide_window.title("NexData - User Guide & Tutorials")
+                guide_window.geometry("900x700")
+                
+                # Add scrolled text widget
+                text_widget = scrolledtext.ScrolledText(guide_window, wrap=tk.WORD, font=('Courier', 10))
+                text_widget.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+                text_widget.insert(1.0, guide_content)
+                text_widget.config(state='disabled')  # Read-only
+                
+                # Add close button
+                ttk.Button(guide_window, text="Close", command=guide_window.destroy).pack(pady=5)
+                
+                self.update_status("User guide opened")
+            else:
+                messagebox.showinfo("User Guide", "User guide file not found.\n\nAccess online: https://github.com/YEXIU21/NexData")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to open user guide:\n{str(e)}")
+    
+    def show_quick_start(self):
+        """Show quick start guide"""
+        quick_start = """NEXDATA - QUICK START GUIDE
+        
+🚀 GET STARTED IN 5 MINUTES!
+
+STEP 1: IMPORT YOUR DATA
+• File > Import CSV (or Import Excel)
+• Select your data file
+• ✅ Data loads automatically
+
+STEP 2: VIEW YOUR DATA
+• Click "View Data" button (left panel)
+• Browse your dataset
+• Check columns and data types
+
+STEP 3: CHECK DATA QUALITY
+• Data > Data Quality Check
+• Review quality score (0-100)
+• Follow recommendations
+
+STEP 4: RUN AUTO INSIGHTS
+• Analysis > Auto Insights
+• Get automated pattern detection
+• Review trends and correlations
+
+STEP 5: CREATE VISUALIZATIONS
+• Visualize > Histogram (or any chart type)
+• Select column to visualize
+• Use zoom/pan tools to explore
+
+STEP 6: EXPORT RESULTS
+• File > Generate Executive Report
+• Professional HTML report created
+• Opens in browser automatically
+
+📊 COMMON TASKS:
+
+SQL QUERIES (Most Powerful!):
+• Analysis > SQL Query
+• Example: SELECT * FROM data WHERE Salary > 50000
+• Example: SELECT Department, AVG(Salary) FROM data GROUP BY Department
+
+CUSTOMER ANALYSIS:
+• Analysis > RFM Customer Segmentation
+• Identifies Champions, Loyal, At-Risk customers
+• Perfect for marketing campaigns
+
+SALES FORECASTING:
+• Analysis > Time Series Forecasting
+• Predict future sales/revenue
+• Choose: Linear Trend, Moving Average, or Exponential Smoothing
+
+DATA COMPARISON:
+• Tools > Compare Datasets
+• Load second file to compare
+• See differences automatically
+
+💡 TIPS:
+• Always check Data Quality first
+• Use Auto Insights for quick overview
+• SQL Query can do almost anything
+• Export reports for presentations
+• Try different themes (View > Theme)
+
+🆘 NEED HELP?
+• Help > User Guide & Tutorials (full documentation)
+• Help > Performance Monitor (if slow)
+• Help > About (feature list)
+
+🎯 RECOMMENDED WORKFLOW:
+1. Import data
+2. Data Quality Check
+3. Clean data (remove duplicates/outliers)
+4. Auto Insights
+5. Detailed analysis (SQL/Statistics)
+6. Visualizations
+7. Generate reports
+
+✨ YOU'RE READY! Start exploring your data!
+
+For detailed tutorials: Help > User Guide & Tutorials
+"""
+        messagebox.showinfo("Quick Start Guide", quick_start)
+    
     def show_about(self):
-        about_text = """NexData v2.0 - Professional Data Analysis
-Shopify Edition
+        about_text = """NexData v3.0 - Professional Data Analysis
+Shopify Edition - Next-Generation Analytics
 
 Created for E-commerce & Shopify Data Analysts
 
-✨ Features:
-• Data Import/Export (CSV, Excel, JSON)
-• Advanced Data Cleaning
+✨ 60+ Features Including:
+• Data Import/Export (CSV, Excel, JSON, PowerPoint)
+• Advanced Data Cleaning & Quality Assessment
 • Statistical Analysis & A/B Testing
-• Time Series Analysis
-• E-commerce Dashboard
-• 10+ Visualization Types
+• RFM Customer Segmentation (10 segments)
+• Time Series Forecasting (3 methods)
+• Auto Insights & Anomaly Detection
+• Sales/Customer Dashboards
 • SQL Query Interface
-• Theme Support (Light/Dark)
+• 10+ Visualization Types
+• Data Comparison Tool
+• Theme Support (System/Light/Dark)
+• Performance Monitoring
 
 🎯 Perfect for analyzing:
-- Sales trends & Revenue metrics
-- Customer behavior
-- Product performance
-- Campaign effectiveness
+- Sales trends & Revenue forecasting
+- Customer segmentation & Retention
+- Product performance & Inventory
+- Marketing campaign effectiveness
+- Data quality & Validation
+
+🚀 NEW in v3.0:
+• Pivot Tables • RFM Analysis • Auto Insights
+• Forecasting • Quality Checker • Dashboards
+• Dataset Comparison • PowerPoint Export
 
 👨‍💻 Developed by: YEXIU21
 
 © 2025 NexData - Built with Python, Pandas, Matplotlib
-Next-Generation Data Analytics"""
+Next-Generation Data Analytics Platform"""
         
-        messagebox.showinfo("About NexData", about_text)
+        messagebox.showinfo("About NexData v3.0", about_text)
 
 
 # Entry point moved to src/main.py following SEPARATION OF CONCERNS principle
