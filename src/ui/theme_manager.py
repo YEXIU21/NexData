@@ -112,6 +112,17 @@ class ThemeManager:
                            background=theme['bg'],
                            foreground=theme['fg'])
         
+        # Header label style (for "Quick Actions", "Dataset Info", etc.)
+        self.style.configure('Header.TLabel',
+                           font=('Arial', 12, 'bold'),
+                           background=theme['bg'],
+                           foreground=theme['fg'])
+        
+        # Action button style
+        self.style.configure('Action.TButton',
+                           font=('Arial', 10, 'bold'),
+                           padding=5)
+        
         # Update all existing widgets
         self._update_widgets(self.root, theme)
         

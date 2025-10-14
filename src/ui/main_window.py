@@ -47,8 +47,10 @@ class DataAnalystApp:
     def setup_styles(self):
         style = ttk.Style()
         style.theme_use('clam')
-        style.configure('Title.TLabel', font=('Arial', 16, 'bold'), background='#f0f0f0')
-        style.configure('Header.TLabel', font=('Arial', 12, 'bold'), background='#f0f0f0')
+        # Note: Styles will be configured by theme_manager
+        # Initial setup for fonts only, colors handled by theme
+        style.configure('Title.TLabel', font=('Arial', 16, 'bold'))
+        style.configure('Header.TLabel', font=('Arial', 12, 'bold'))
         style.configure('Action.TButton', font=('Arial', 10, 'bold'), padding=5)
         
     def create_menu(self):
