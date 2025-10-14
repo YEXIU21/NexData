@@ -41,16 +41,16 @@ class ThemeManager:
         },
         'dark': {
             'name': 'Dark Mode',
-            'bg': '#1a202c',
-            'fg': '#e2e8f0',
-            'text_bg': '#2d3748',
-            'text_fg': '#f7fafc',
-            'button_bg': '#4a5568',
-            'button_fg': '#e2e8f0',
-            'select_bg': '#667eea',
+            'bg': '#2b2b2b',
+            'fg': '#ffffff',
+            'text_bg': '#1e1e1e',
+            'text_fg': '#d4d4d4',
+            'button_bg': '#404040',
+            'button_fg': '#ffffff',
+            'select_bg': '#0e639c',
             'select_fg': '#ffffff',
-            'menu_bg': '#2d3748',
-            'menu_fg': '#e2e8f0'
+            'menu_bg': '#3c3c3c',
+            'menu_fg': '#ffffff'
         }
     }
     
@@ -119,47 +119,63 @@ class ThemeManager:
     
     def _update_widgets(self, widget, theme):
         """Recursively update all widgets"""
-        # Update Text widgets
-        if isinstance(widget, tk.Text):
-            widget.configure(
-                bg=theme['text_bg'],
-                fg=theme['text_fg'],
-                insertbackground=theme['text_fg'],
-                selectbackground=theme['select_bg'],
-                selectforeground=theme['select_fg']
-            )
-        
-        # Update Frame widgets
-        elif isinstance(widget, tk.Frame):
-            widget.configure(bg=theme['bg'])
-        
-        # Update Label widgets
-        elif isinstance(widget, tk.Label):
-            widget.configure(bg=theme['bg'], fg=theme['fg'])
-        
-        # Update Button widgets (tk.Button, not ttk.Button)
-        elif isinstance(widget, tk.Button):
-            widget.configure(
-                bg=theme['button_bg'],
-                fg=theme['button_fg'],
-                activebackground=theme['select_bg'],
-                activeforeground=theme['select_fg']
-            )
-        
-        # Update Menu widgets
-        elif isinstance(widget, tk.Menu):
-            widget.configure(
-                bg=theme['menu_bg'],
-                fg=theme['menu_fg'],
-                activebackground=theme['select_bg'],
-                activeforeground=theme['select_fg']
-            )
-        
-        # Recursively update children
         try:
+            # Update Text widgets (including ScrolledText)
+            if isinstance(widget, tk.Text):
+                widget.configure(
+                    bg=theme['text_bg'],
+                    fg=theme['text_fg'],
+                    insertbackground=theme['text_fg'],
+                    selectbackground=theme['select_bg'],
+                    selectforeground=theme['select_fg']
+                )
+            
+            # Update Frame widgets (both tk.Frame and ttk.Frame)
+            elif isinstance(widget, (tk.Frame, ttk.Frame)):
+                try:
+                    widget.configure(bg=theme['bg'])
+                except:
+                    # ttk.Frame doesn't have bg, uses style instead
+                    pass
+            
+            # Update Label widgets (both tk.Label and ttk.Label)
+            elif isinstance(widget, (tk.Label, ttk.Label)):
+                try:
+                    widget.configure(bg=theme['bg'], fg=theme['fg'])
+                except:
+                    # ttk.Label uses style
+                    pass
+            
+            # Update Button widgets (tk.Button only)
+            elif isinstance(widget, tk.Button):
+                widget.configure(
+                    bg=theme['button_bg'],
+                    fg=theme['button_fg'],
+                    activebackground=theme['select_bg'],
+                    activeforeground=theme['select_fg']
+                )
+            
+            # Update Menu widgets
+            elif isinstance(widget, tk.Menu):
+                widget.configure(
+                    bg=theme['menu_bg'],
+                    fg=theme['menu_fg'],
+                    activebackground=theme['select_bg'],
+                    activeforeground=theme['select_fg']
+                )
+            
+            # Update PanedWindow
+            elif isinstance(widget, (tk.PanedWindow, ttk.PanedWindow)):
+                try:
+                    widget.configure(bg=theme['bg'])
+                except:
+                    pass
+            
+            # Recursively update children
             for child in widget.winfo_children():
                 self._update_widgets(child, theme)
-        except:
+        except Exception as e:
+            # Silently continue if widget doesn't support theming
             pass
     
     def get_current_theme(self):
