@@ -924,10 +924,11 @@ class DataAnalystApp:
                 result_text.insert(tk.END, f"Rows returned: {len(result_df)}\n\n")
                 result_text.insert(tk.END, result_df.to_string())
         
-        # Button in centered frame for consistent positioning
+        # Button in centered frame with explicit padding for consistent text positioning
         btn_frame = ttk.Frame(dialog)
         btn_frame.pack(pady=10)
-        ttk.Button(btn_frame, text="Execute Query", command=execute, width=15).pack()
+        exec_btn = ttk.Button(btn_frame, text="Execute Query", command=execute, width=15)
+        exec_btn.pack(ipady=2)  # Internal padding to keep text centered vertically
         
         self.update_status("SQL Query interface opened")
     
