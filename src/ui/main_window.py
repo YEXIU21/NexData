@@ -20,6 +20,13 @@ sns.set_style('whitegrid')
 # Import theme manager
 from ui.theme_manager import ThemeManager
 
+# Import Excel pivot exporter
+from data_ops.excel_pivot_export import ExcelPivotExporter
+
+# Import API connector window
+from ui.api_connector_window import APIConnectorWindow
+from data_ops.data_manager import get_data_manager
+
 
 class DataAnalystApp:
     def __init__(self, root):
@@ -31,6 +38,10 @@ class DataAnalystApp:
         self.df = None
         self.original_df = None
         self.file_path = None
+        
+        # Enterprise-grade data manager
+        self.data_manager = get_data_manager()
+        self.use_smart_loading = True  # Toggle for enterprise features
         
         # Initialize theme manager
         self.theme_manager = ThemeManager(self.root)
@@ -65,9 +76,11 @@ class DataAnalystApp:
         menubar.add_cascade(label="File", menu=file_menu)
         file_menu.add_command(label="Import CSV", command=self.import_csv)
         file_menu.add_command(label="Import Excel", command=self.import_excel)
+        file_menu.add_command(label="Connect to API", command=self.open_api_connector)
         file_menu.add_separator()
         file_menu.add_command(label="Export CSV", command=self.export_csv)
         file_menu.add_command(label="Export Excel", command=self.export_excel)
+        file_menu.add_command(label="Export Excel with Pivot", command=self.export_excel_with_pivot)
         file_menu.add_command(label="Export JSON", command=self.export_json)
         file_menu.add_separator()
         file_menu.add_command(label="Generate Executive Report (HTML)", command=self.generate_executive_report)
@@ -204,21 +217,53 @@ class DataAnalystApp:
         self.status_bar.config(text=f"{timestamp} | {message}")
         
     def update_info_panel(self):
+        """Update info panel with dataset information - Enterprise Edition"""
         self.info_text.delete(1.0, tk.END)
         
         if self.df is None:
-            self.info_text.insert(tk.END, "No data loaded.\n\nUse File menu to import:\n- CSV files\n- Excel files")
+            self.info_text.insert(tk.END, "No data loaded.\n\nUse File menu to import:\n- CSV files\n- Excel files\n- API data (Shopify, etc.)")
         else:
-            info = f"File: {os.path.basename(self.file_path) if self.file_path else 'N/A'}\n\n"
-            info += f"Shape: {self.df.shape[0]} rows × {self.df.shape[1]} columns\n\nColumns:\n"
+            # Get metadata from data manager if using smart loading
+            metadata = {}
+            if self.use_smart_loading:
+                metadata = self.data_manager.get_metadata()
+            
+            # File/Source info
+            source = os.path.basename(self.file_path) if self.file_path else metadata.get('source', 'API')
+            info = f"📊 Dataset Info\n{'='*40}\n\n"
+            info += f"Source: {source}\n"
+            
+            # Storage mode (Enterprise feature)
+            storage_mode = metadata.get('storage', 'memory')
+            if storage_mode == 'database':
+                total_rows = metadata.get('rows', 0)
+                info += f"💾 Storage: Database (Large Dataset)\n"
+                info += f"📈 Total Rows: {total_rows:,}\n"
+                info += f"👁️ Viewing: Sample of {len(self.df):,} rows\n"
+                info += f"Columns: {metadata.get('cols', 0)}\n\n"
+                info += "ℹ️ Using on-demand loading for optimal performance.\n"
+                info += "Data is paginated automatically.\n\n"
+            else:
+                info += f"💾 Storage: Memory (Fast Mode)\n"
+                info += f"Shape: {self.df.shape[0]:,} rows × {self.df.shape[1]} columns\n\n"
+            
+            # Column info
+            info += f"Columns:\n"
             for col in self.df.columns[:15]:
                 info += f"  • {col} ({self.df[col].dtype})\n"
             if len(self.df.columns) > 15:
                 info += f"  ... and {len(self.df.columns) - 15} more\n"
             
+            # Data quality info
             missing = self.df.isnull().sum().sum()
             if missing > 0:
-                info += f"\nMissing Values: {missing}\n"
+                info += f"\n⚠️ Missing Values: {missing}\n"
+            else:
+                info += f"\n✅ No Missing Values\n"
+            
+            # Size info
+            if 'size_mb' in metadata:
+                info += f"💿 Size: {metadata['size_mb']:.2f} MB\n"
             
             self.info_text.insert(tk.END, info)
     
@@ -249,6 +294,46 @@ class DataAnalystApp:
                 messagebox.showinfo("Success", f"Excel loaded!\n{self.df.shape[0]} rows, {self.df.shape[1]} cols")
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to load Excel:\n{str(e)}")
+    
+    def open_api_connector(self):
+        """Open API Connector window"""
+        def load_api_data(df):
+            """Callback to load data from API into main app - Enterprise Edition"""
+            if self.use_smart_loading:
+                # Use intelligent data manager
+                success, message = self.data_manager.load_data(df, source_name="api_data")
+                
+                if success:
+                    # For UI compatibility, keep reference to sample data
+                    self.df = self.data_manager.get_sample(1000)  # Keep 1K rows for UI
+                    self.original_df = self.df.copy()
+                    self.file_path = None
+                    
+                    # Show storage mode in status
+                    metadata = self.data_manager.get_metadata()
+                    storage_mode = metadata.get('storage', 'unknown')
+                    self.update_status(f"Loaded from API: {len(df)} rows ({storage_mode} mode)")
+                    self.update_info_panel()
+                    self.view_data()
+                    
+                    # Info message about storage
+                    if storage_mode == 'database':
+                        messagebox.showinfo("Large Dataset", 
+                            f"{message}\n\n"
+                            "✅ Using database storage for optimal performance!\n"
+                            "Data is loaded on-demand with pagination.")
+                else:
+                    messagebox.showerror("Error", f"Failed to load data: {message}")
+            else:
+                # Traditional in-memory loading
+                self.df = df
+                self.original_df = df.copy()
+                self.file_path = None
+                self.update_status(f"Loaded from API: {len(df)} rows")
+                self.update_info_panel()
+                self.view_data()
+        
+        APIConnectorWindow(self.root, load_api_data)
     
     def export_csv(self):
         if self.df is None:
@@ -288,6 +373,126 @@ class DataAnalystApp:
                 self.update_status(f"Exported to JSON")
             except Exception as e:
                 messagebox.showerror("Error", f"Export failed:\n{str(e)}")
+    
+    def export_excel_with_pivot(self):
+        """Export Excel with pivot table configuration dialog"""
+        if self.df is None:
+            messagebox.showwarning("Warning", "No data to export!")
+            return
+        
+        # Create configuration dialog
+        pivot_window = tk.Toplevel(self.root)
+        pivot_window.title("Export Excel with Pivot Table")
+        pivot_window.geometry("500x450")
+        pivot_window.transient(self.root)
+        pivot_window.grab_set()
+        
+        # Title
+        ttk.Label(pivot_window, text="Configure Pivot Table Export", style='Header.TLabel').pack(pady=10)
+        
+        # Frame for configuration
+        config_frame = ttk.Frame(pivot_window, padding=20)
+        config_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Get column names
+        columns = list(self.df.columns)
+        
+        # Index (Rows) selection
+        ttk.Label(config_frame, text="Row Field (Index):").grid(row=0, column=0, sticky='w', pady=5)
+        index_var = tk.StringVar()
+        index_combo = ttk.Combobox(config_frame, textvariable=index_var, values=columns, width=30)
+        index_combo.grid(row=0, column=1, pady=5, padx=5)
+        if columns:
+            index_combo.current(0)
+        
+        # Columns selection
+        ttk.Label(config_frame, text="Column Field (optional):").grid(row=1, column=0, sticky='w', pady=5)
+        column_var = tk.StringVar()
+        column_combo = ttk.Combobox(config_frame, textvariable=column_var, values=['None'] + columns, width=30)
+        column_combo.grid(row=1, column=1, pady=5, padx=5)
+        column_combo.current(0)
+        
+        # Values selection
+        ttk.Label(config_frame, text="Value Field:").grid(row=2, column=0, sticky='w', pady=5)
+        value_var = tk.StringVar()
+        
+        # Filter numeric columns for values
+        numeric_columns = list(self.df.select_dtypes(include=['number']).columns)
+        if not numeric_columns:
+            numeric_columns = columns
+        
+        value_combo = ttk.Combobox(config_frame, textvariable=value_var, values=numeric_columns, width=30)
+        value_combo.grid(row=2, column=1, pady=5, padx=5)
+        if numeric_columns:
+            value_combo.current(0)
+        
+        # Aggregation function
+        ttk.Label(config_frame, text="Aggregation Function:").grid(row=3, column=0, sticky='w', pady=5)
+        aggfunc_var = tk.StringVar(value='sum')
+        aggfunc_combo = ttk.Combobox(config_frame, textvariable=aggfunc_var, 
+                                     values=['sum', 'mean', 'count', 'min', 'max', 'median'], 
+                                     width=30)
+        aggfunc_combo.grid(row=3, column=1, pady=5, padx=5)
+        
+        # Add chart checkbox
+        add_chart_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(config_frame, text="Include Bar Chart", variable=add_chart_var).grid(row=4, column=0, columnspan=2, pady=10)
+        
+        # Result label
+        result_label = ttk.Label(config_frame, text="", foreground="blue")
+        result_label.grid(row=5, column=0, columnspan=2, pady=5)
+        
+        def perform_export():
+            """Perform the export with pivot"""
+            try:
+                # Get file path
+                file_path = filedialog.asksaveasfilename(
+                    defaultextension=".xlsx", 
+                    filetypes=[("Excel files", "*.xlsx")],
+                    parent=pivot_window
+                )
+                
+                if not file_path:
+                    return
+                
+                # Build pivot configuration
+                pivot_config = {
+                    'index': index_var.get(),
+                    'columns': None if column_var.get() == 'None' else column_var.get(),
+                    'values': value_var.get(),
+                    'aggfunc': aggfunc_var.get()
+                }
+                
+                # Perform export
+                result_label.config(text="Exporting...", foreground="blue")
+                pivot_window.update()
+                
+                if add_chart_var.get():
+                    success, message = ExcelPivotExporter.export_with_charts(
+                        self.df, file_path, pivot_config, chart_type='bar'
+                    )
+                else:
+                    success, message = ExcelPivotExporter.export_with_pivot(
+                        self.df, file_path, pivot_config
+                    )
+                
+                if success:
+                    messagebox.showinfo("Success", message, parent=pivot_window)
+                    self.update_status("Exported Excel with pivot table")
+                    pivot_window.destroy()
+                else:
+                    result_label.config(text=f"Error: {message}", foreground="red")
+            
+            except Exception as e:
+                result_label.config(text=f"Error: {str(e)}", foreground="red")
+                messagebox.showerror("Error", f"Export failed:\n{str(e)}", parent=pivot_window)
+        
+        # Buttons
+        button_frame = ttk.Frame(config_frame)
+        button_frame.grid(row=6, column=0, columnspan=2, pady=20)
+        
+        ttk.Button(button_frame, text="Export", command=perform_export, style='Action.TButton').pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Cancel", command=pivot_window.destroy).pack(side=tk.LEFT, padx=5)
     
     def view_data(self):
         if self.df is None:
