@@ -27,6 +27,18 @@ from data_ops.excel_pivot_export import ExcelPivotExporter
 from ui.api_connector_window import APIConnectorWindow
 from data_ops.data_manager import get_data_manager
 
+# Import progress window for long operations
+from ui.progress_window import run_with_progress, ProgressWindow
+
+# Import tooltip system
+from ui.tooltip import create_tooltip, COMMON_TOOLTIPS
+
+# Import autosave manager
+from utils.autosave_manager import get_autosave_manager
+
+# Import service layer
+from services import CleaningService, AnalysisService, AIService, DataService
+
 
 class DataAnalystApp:
     def __init__(self, root):
@@ -50,14 +62,25 @@ class DataAnalystApp:
         from utils.performance_monitor import PerformanceMonitor
         self.perf_monitor = PerformanceMonitor()
         
+        # Initialize service layer
+        self.cleaning_service = CleaningService()
+        self.analysis_service = AnalysisService()
+        self.ai_service = AIService()
+        self.data_service = DataService()
+        
+        # Initialize autosave (5 minute interval)
+        self.autosave_manager = get_autosave_manager(save_interval=300)
+        
         self.setup_styles()
         self.create_menu()
         self.create_ui()
+        self.setup_keyboard_shortcuts()
+        self.check_recovery_data()
         
         # Apply default system theme
         self.theme_manager.apply_theme('system')
         
-        self.update_status("Ready")
+        self.update_status("Ready | Auto-save: ON")
 
     def setup_styles(self):
         style = ttk.Style()
@@ -67,6 +90,62 @@ class DataAnalystApp:
         style.configure('Title.TLabel', font=('Arial', 16, 'bold'))
         style.configure('Header.TLabel', font=('Arial', 12, 'bold'))
         style.configure('Action.TButton', font=('Arial', 10, 'bold'), padding=5)
+    
+    def setup_keyboard_shortcuts(self):
+        """Setup keyboard shortcuts for common operations"""
+        # File operations
+        self.root.bind('<Control-o>', lambda e: self.import_csv())
+        self.root.bind('<Control-O>', lambda e: self.import_csv())
+        self.root.bind('<Control-e>', lambda e: self.export_csv())
+        self.root.bind('<Control-E>', lambda e: self.export_csv())
+        self.root.bind('<Control-q>', lambda e: self.root.quit())
+        self.root.bind('<Control-Q>', lambda e: self.root.quit())
+        
+        # Data operations
+        self.root.bind('<Control-d>', lambda e: self.view_data())
+        self.root.bind('<Control-D>', lambda e: self.view_data())
+        self.root.bind('<Control-s>', lambda e: self.show_statistics())
+        self.root.bind('<Control-S>', lambda e: self.show_statistics())
+        self.root.bind('<Control-r>', lambda e: self.reset_data())
+        self.root.bind('<Control-R>', lambda e: self.reset_data())
+        self.root.bind('<Control-f>', lambda e: self.advanced_filters())
+        self.root.bind('<Control-F>', lambda e: self.advanced_filters())
+        
+        # Help
+        self.root.bind('<F1>', lambda e: self.show_about())
+        
+        self.update_status("Keyboard shortcuts enabled")
+    
+    def check_recovery_data(self):
+        """Check for crash recovery data on startup"""
+        if self.autosave_manager.has_recovery_data():
+            recovery_info = self.autosave_manager.get_recovery_info()
+            if recovery_info:
+                message = f"""Auto-saved data found!
+
+Last saved: {recovery_info['timestamp']}
+Rows: {recovery_info['rows']}
+Columns: {recovery_info['columns']}
+Size: {recovery_info['size_mb']:.2f} MB
+
+Would you like to recover this data?"""
+                
+                response = messagebox.askyesno("Crash Recovery", message)
+                if response:
+                    df = self.autosave_manager.recover_data()
+                    if df is not None:
+                        self.df = df
+                        self.original_df = df.copy()
+                        self.file_path = recovery_info.get('original_path')
+                        self.update_info_panel()
+                        self.view_data()
+                        messagebox.showinfo("Success", "Data recovered successfully!")
+                        self.update_status("Recovered from auto-save")
+                    else:
+                        messagebox.showerror("Error", "Failed to recover data")
+                else:
+                    # User declined recovery, clear old data
+                    self.autosave_manager.clear_recovery_data()
         
     def create_menu(self):
         menubar = tk.Menu(self.root)
@@ -96,6 +175,9 @@ class DataAnalystApp:
         data_menu.add_command(label="Data Info", command=self.show_data_info)
         data_menu.add_command(label="Statistics", command=self.show_statistics)
         data_menu.add_separator()
+        data_menu.add_command(label="Sort Data", command=self.sort_data)
+        data_menu.add_command(label="Convert Data Types", command=self.convert_dtypes)
+        data_menu.add_separator()
         data_menu.add_command(label="Advanced Filters", command=self.advanced_filters)
         data_menu.add_command(label="Data Quality Check", command=self.data_quality_check)
         data_menu.add_separator()
@@ -103,13 +185,31 @@ class DataAnalystApp:
         
         clean_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Clean", menu=clean_menu)
+        clean_menu.add_command(label="🤖 Data Quality Advisor", command=self.data_quality_advisor)
+        clean_menu.add_separator()
         clean_menu.add_command(label="Remove Duplicates", command=self.remove_duplicates)
         clean_menu.add_command(label="Handle Missing Values", command=self.handle_missing_values)
+        clean_menu.add_command(label="Smart Fill Missing Data", command=self.smart_fill_missing)
+        clean_menu.add_separator()
+        clean_menu.add_command(label="Find & Replace", command=self.find_replace)
+        clean_menu.add_command(label="Standardize Text Case", command=self.standardize_text_case)
+        clean_menu.add_command(label="Remove Empty Rows/Columns", command=self.remove_empty)
+        clean_menu.add_command(label="Trim All Columns", command=self.trim_all_columns)
+        clean_menu.add_separator()
         clean_menu.add_command(label="Remove Outliers", command=self.remove_outliers)
+        clean_menu.add_command(label="Clean Order IDs", command=self.clean_order_ids)
+        clean_menu.add_separator()
+        clean_menu.add_command(label="Data Type Converter", command=self.convert_data_types)
+        clean_menu.add_command(label="Standardize Dates", command=self.standardize_dates)
+        clean_menu.add_command(label="Remove Special Characters", command=self.remove_special_chars)
+        clean_menu.add_command(label="Split/Merge Columns", command=self.split_merge_columns)
         
         # Analysis menu
         analysis_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Analysis", menu=analysis_menu)
+        analysis_menu.add_command(label="🤖 AI Report Generator", command=self.ai_report_generator)
+        analysis_menu.add_separator()
+        analysis_menu.add_command(label="Group By Analysis", command=self.groupby_analysis)
         analysis_menu.add_command(label="Pivot Table", command=self.pivot_table)
         analysis_menu.add_command(label="SQL Query", command=self.sql_query)
         analysis_menu.add_command(label="Data Profiling Report", command=self.data_profiling_report)
@@ -130,10 +230,13 @@ class DataAnalystApp:
         
         viz_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Visualize", menu=viz_menu)
+        viz_menu.add_command(label="Bar Chart", command=self.plot_bar)
+        viz_menu.add_command(label="Line Chart", command=self.plot_line)
+        viz_menu.add_command(label="Pie Chart", command=self.plot_pie)
+        viz_menu.add_separator()
         viz_menu.add_command(label="Histogram", command=self.plot_histogram)
         viz_menu.add_command(label="Box Plot", command=self.plot_boxplot)
         viz_menu.add_command(label="Scatter Plot", command=self.plot_scatter)
-        viz_menu.add_command(label="Pie Chart", command=self.plot_pie)
         viz_menu.add_separator()
         viz_menu.add_command(label="Distribution Plot (KDE)", command=self.plot_distribution)
         viz_menu.add_command(label="Violin Plot", command=self.plot_violin)
@@ -179,10 +282,26 @@ class DataAnalystApp:
         actions_frame = ttk.Frame(left_panel)
         actions_frame.pack(fill=tk.X, padx=10, pady=5)
         
-        ttk.Button(actions_frame, text="Import CSV", command=self.import_csv, style='Action.TButton').pack(fill=tk.X, pady=2)
-        ttk.Button(actions_frame, text="Import Excel", command=self.import_excel, style='Action.TButton').pack(fill=tk.X, pady=2)
-        ttk.Button(actions_frame, text="View Data", command=self.view_data, style='Action.TButton').pack(fill=tk.X, pady=2)
-        ttk.Button(actions_frame, text="Statistics", command=self.show_statistics, style='Action.TButton').pack(fill=tk.X, pady=2)
+        # Create buttons with tooltips
+        btn_import_csv = ttk.Button(actions_frame, text="Import CSV", command=self.import_csv, style='Action.TButton')
+        btn_import_csv.pack(fill=tk.X, pady=2)
+        create_tooltip(btn_import_csv, COMMON_TOOLTIPS['import_csv'])
+        
+        btn_import_excel = ttk.Button(actions_frame, text="Import Excel", command=self.import_excel, style='Action.TButton')
+        btn_import_excel.pack(fill=tk.X, pady=2)
+        create_tooltip(btn_import_excel, COMMON_TOOLTIPS['import_excel'])
+        
+        btn_view = ttk.Button(actions_frame, text="View Data", command=self.view_data, style='Action.TButton')
+        btn_view.pack(fill=tk.X, pady=2)
+        create_tooltip(btn_view, COMMON_TOOLTIPS['view_data'])
+        
+        btn_stats = ttk.Button(actions_frame, text="Statistics", command=self.show_statistics, style='Action.TButton')
+        btn_stats.pack(fill=tk.X, pady=2)
+        create_tooltip(btn_stats, COMMON_TOOLTIPS['statistics'])
+        
+        btn_reset = ttk.Button(actions_frame, text="Reset Data", command=self.reset_data, style='Action.TButton')
+        btn_reset.pack(fill=tk.X, pady=2)
+        create_tooltip(btn_reset, COMMON_TOOLTIPS['reset_data'])
         
         ttk.Separator(left_panel, orient=tk.HORIZONTAL).pack(fill=tk.X, padx=10, pady=10)
         ttk.Label(left_panel, text="Dataset Info", style='Header.TLabel').pack(pady=10)
@@ -199,8 +318,51 @@ class DataAnalystApp:
         
         output_frame = ttk.Frame(self.notebook)
         self.notebook.add(output_frame, text="Output")
-        self.output_text = scrolledtext.ScrolledText(output_frame, height=30, font=('Courier', 10), wrap=tk.NONE)
-        self.output_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        # Create PanedWindow for split view
+        output_paned = ttk.PanedWindow(output_frame, orient=tk.VERTICAL)
+        output_paned.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        # Text output (for logs/messages)
+        text_frame = ttk.LabelFrame(output_paned, text="Messages & Logs", padding=5)
+        self.output_text = scrolledtext.ScrolledText(text_frame, height=8, font=('Courier', 9), wrap=tk.NONE)
+        self.output_text.pack(fill=tk.BOTH, expand=True)
+        output_paned.add(text_frame, weight=1)
+        
+        # Grid output (for table results) - Excel-like
+        grid_frame = ttk.LabelFrame(output_paned, text="Results Grid (Excel-like)", padding=5)
+        
+        # Create Treeview with scrollbars for grid display
+        tree_scroll_frame = ttk.Frame(grid_frame)
+        tree_scroll_frame.pack(fill=tk.BOTH, expand=True)
+        
+        tree_yscroll = ttk.Scrollbar(tree_scroll_frame, orient=tk.VERTICAL)
+        tree_xscroll = ttk.Scrollbar(tree_scroll_frame, orient=tk.HORIZONTAL)
+        
+        self.output_grid = ttk.Treeview(
+            tree_scroll_frame,
+            yscrollcommand=tree_yscroll.set,
+            xscrollcommand=tree_xscroll.set,
+            show='tree headings',
+            selectmode='extended'
+        )
+        
+        tree_yscroll.config(command=self.output_grid.yview)
+        tree_xscroll.config(command=self.output_grid.xview)
+        
+        self.output_grid.grid(row=0, column=0, sticky='nsew')
+        tree_yscroll.grid(row=0, column=1, sticky='ns')
+        tree_xscroll.grid(row=1, column=0, sticky='ew')
+        
+        tree_scroll_frame.grid_rowconfigure(0, weight=1)
+        tree_scroll_frame.grid_columnconfigure(0, weight=1)
+        
+        output_paned.add(grid_frame, weight=2)
+        
+        # Initialize grid as empty
+        self.output_grid['columns'] = ()
+        self.output_grid.heading('#0', text='#')
+        self.output_grid.column('#0', width=50, anchor='center')
         
         viz_frame = ttk.Frame(self.notebook)
         self.notebook.add(viz_frame, text="Visualization")
@@ -216,6 +378,11 @@ class DataAnalystApp:
         timestamp = datetime.now().strftime("%H:%M:%S")
         self.status_bar.config(text=f"{timestamp} | {message}")
         
+    def update_autosave_data(self):
+        """Update autosave manager with current dataframe after modifications"""
+        if self.df is not None:
+            self.autosave_manager.update_data(self.df)
+    
     def update_info_panel(self):
         """Update info panel with dataset information - Enterprise Edition"""
         self.info_text.delete(1.0, tk.END)
@@ -267,17 +434,97 @@ class DataAnalystApp:
             
             self.info_text.insert(tk.END, info)
     
+    def display_results_in_grid(self, data, title="Results"):
+        """
+        Display data in Excel-like grid format in Output tab.
+        
+        Args:
+            data: Can be pandas DataFrame, Series, or dict
+            title: Title for the results
+        """
+        # Clear existing grid
+        for item in self.output_grid.get_children():
+            self.output_grid.delete(item)
+        
+        # Convert data to DataFrame if needed
+        if isinstance(data, dict):
+            df = pd.DataFrame(list(data.items()), columns=['Key', 'Value'])
+        elif isinstance(data, pd.Series):
+            df = pd.DataFrame({data.name or 'Value': data}).reset_index()
+            df.columns = ['Index', data.name or 'Value']
+        elif isinstance(data, pd.DataFrame):
+            df = data.reset_index(drop=False) if data.index.name else data
+        else:
+            # Fallback to text display
+            self.output_text.insert(tk.END, f"\n{title}:\n{str(data)}\n")
+            return
+        
+        # Configure columns
+        columns = list(df.columns)
+        self.output_grid['columns'] = columns
+        
+        # Set column headings and widths
+        self.output_grid.heading('#0', text='#', anchor='center')
+        self.output_grid.column('#0', width=50, anchor='center', stretch=False)
+        
+        for col in columns:
+            self.output_grid.heading(col, text=col, anchor='w')
+            # Auto-size columns based on content
+            max_width = max(len(str(col)) * 10, 100)
+            if len(df) > 0:
+                max_content = df[col].astype(str).str.len().max()
+                max_width = min(max(max_width, max_content * 8), 300)
+            self.output_grid.column(col, width=max_width, anchor='w')
+        
+        # Insert data rows
+        for idx, row in df.iterrows():
+            values = []
+            for col in columns:
+                val = row[col]
+                # Format numbers nicely
+                if pd.api.types.is_float_dtype(type(val)) and not pd.isna(val):
+                    values.append(f"{val:,.2f}")
+                elif pd.api.types.is_integer_dtype(type(val)) and not pd.isna(val):
+                    values.append(f"{val:,}")
+                else:
+                    values.append(str(val))
+            
+            self.output_grid.insert('', 'end', text=str(idx + 1), values=values)
+        
+        # Add row count to status
+        self.output_text.insert(tk.END, f"\n{title}: {len(df)} rows displayed in grid\n")
+    
     def import_csv(self):
         file_path = filedialog.askopenfilename(title="Select CSV file", filetypes=[("CSV files", "*.csv"), ("All files", "*.*")])
         if file_path:
             try:
-                self.df = pd.read_csv(file_path)
+                # Check file size for progress bar
+                file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
+                
+                if file_size_mb > 10:  # Show progress for files > 10MB
+                    # Use progress window for large files
+                    def load_task(progress):
+                        progress(10, "Opening file...", f"File size: {file_size_mb:.1f}MB")
+                        df = self.data_service.import_csv(file_path)
+                        progress(80, "Processing data...", f"Loaded {len(df)} rows")
+                        progress(100, "Complete!", f"{len(df)} rows, {len(df.columns)} columns")
+                        return df
+                    
+                    self.df = run_with_progress(self.root, load_task, "Importing Large CSV", cancelable=False)
+                else:
+                    # Direct import for small files
+                    self.df = self.data_service.import_csv(file_path)
+                
                 self.original_df = self.df.copy()
                 self.file_path = file_path
                 self.update_status(f"Loaded: {os.path.basename(file_path)}")
                 self.update_info_panel()
                 self.view_data()
-                messagebox.showinfo("Success", f"CSV loaded!\n{self.df.shape[0]} rows, {self.df.shape[1]} cols")
+                
+                # Start autosave
+                self.autosave_manager.start(self.df, file_path)
+                
+                messagebox.showinfo("Success", f"CSV loaded!\n{self.df.shape[0]} rows, {self.df.shape[1]} cols\n\nAuto-save: ACTIVE")
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to load CSV:\n{str(e)}")
     
@@ -285,13 +532,33 @@ class DataAnalystApp:
         file_path = filedialog.askopenfilename(title="Select Excel file", filetypes=[("Excel files", "*.xlsx *.xls"), ("All files", "*.*")])
         if file_path:
             try:
-                self.df = pd.read_excel(file_path)
+                # Check file size for progress bar
+                file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
+                
+                if file_size_mb > 5:  # Show progress for files > 5MB (Excel is heavier)
+                    # Use progress window for large files
+                    def load_task(progress):
+                        progress(10, "Opening Excel file...", f"File size: {file_size_mb:.1f}MB")
+                        df = self.data_service.import_excel(file_path)
+                        progress(80, "Processing sheets...", f"Loaded {len(df)} rows")
+                        progress(100, "Complete!", f"{len(df)} rows, {len(df.columns)} columns")
+                        return df
+                    
+                    self.df = run_with_progress(self.root, load_task, "Importing Large Excel", cancelable=False)
+                else:
+                    # Direct import for small files
+                    self.df = self.data_service.import_excel(file_path)
+                
                 self.original_df = self.df.copy()
                 self.file_path = file_path
                 self.update_status(f"Loaded: {os.path.basename(file_path)}")
                 self.update_info_panel()
                 self.view_data()
-                messagebox.showinfo("Success", f"Excel loaded!\n{self.df.shape[0]} rows, {self.df.shape[1]} cols")
+                
+                # Start autosave
+                self.autosave_manager.start(self.df, file_path)
+                
+                messagebox.showinfo("Success", f"Excel loaded!\n{self.df.shape[0]} rows, {self.df.shape[1]} cols\n\nAuto-save: ACTIVE")
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to load Excel:\n{str(e)}")
     
@@ -342,7 +609,8 @@ class DataAnalystApp:
         file_path = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV files", "*.csv")])
         if file_path:
             try:
-                self.df.to_csv(file_path, index=False)
+                # Use data service
+                self.data_service.export_csv(self.df, file_path)
                 messagebox.showinfo("Success", f"Exported to:\n{file_path}")
                 self.update_status(f"Exported to CSV")
             except Exception as e:
@@ -355,7 +623,8 @@ class DataAnalystApp:
         file_path = filedialog.asksaveasfilename(defaultextension=".xlsx", filetypes=[("Excel files", "*.xlsx")])
         if file_path:
             try:
-                self.df.to_excel(file_path, index=False, engine='openpyxl')
+                # Use data service
+                self.data_service.export_excel(self.df, file_path)
                 messagebox.showinfo("Success", f"Exported to:\n{file_path}")
                 self.update_status(f"Exported to Excel")
             except Exception as e:
@@ -368,7 +637,8 @@ class DataAnalystApp:
         file_path = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("JSON files", "*.json")])
         if file_path:
             try:
-                self.df.to_json(file_path, orient='records', indent=2)
+                # Use data service
+                self.data_service.export_json(self.df, file_path)
                 messagebox.showinfo("Success", f"Exported to:\n{file_path}")
                 self.update_status(f"Exported to JSON")
             except Exception as e:
@@ -499,7 +769,10 @@ class DataAnalystApp:
             messagebox.showwarning("Warning", "No data loaded!")
             return
         self.output_text.delete(1.0, tk.END)
-        self.output_text.insert(tk.END, f"=== DATA VIEW (First 100 rows) ===\n\n{self.df.head(100).to_string()}")
+        self.output_text.insert(tk.END, f"=== DATA VIEW (First 100 rows) ===\n\n")
+        self.output_text.update_idletasks()  # Show header
+        self.output_text.insert(tk.END, f"{self.df.head(100).to_string()}")
+        self.output_text.update_idletasks()  # Show data
         self.notebook.select(0)
         self.update_status("Displaying data")
     
@@ -509,6 +782,7 @@ class DataAnalystApp:
             return
         self.output_text.delete(1.0, tk.END)
         self.output_text.insert(tk.END, "=== DATA INFORMATION ===\n\n")
+        self.output_text.update_idletasks()  # Show header
         
         info_str = f"Shape: {self.df.shape[0]} rows × {self.df.shape[1]} columns\n\n"
         for col in self.df.columns:
@@ -517,6 +791,7 @@ class DataAnalystApp:
             info_str += f"{col}: {self.df[col].dtype} | Non-Null: {non_null} | Null: {null_count} | Unique: {self.df[col].nunique()}\n"
         
         self.output_text.insert(tk.END, info_str)
+        self.output_text.update_idletasks()  # Show info
         self.notebook.select(0)
         self.update_status("Data information displayed")
     
@@ -524,32 +799,213 @@ class DataAnalystApp:
         if self.df is None:
             messagebox.showwarning("Warning", "No data loaded!")
             return
+        
+        # Get statistics using pandas describe (comprehensive view)
+        stats_df = self.df.describe()
+        
+        # Display header in text
         self.output_text.delete(1.0, tk.END)
-        self.output_text.insert(tk.END, "=== STATISTICAL SUMMARY ===\n\n")
-        self.output_text.insert(tk.END, self.df.describe().to_string())
+        self.output_text.insert(tk.END, "=" * 80 + "\n")
+        self.output_text.insert(tk.END, "STATISTICAL SUMMARY\n")
+        self.output_text.insert(tk.END, f"Numeric Columns: {len(stats_df.columns)}\n")
+        self.output_text.insert(tk.END, "=" * 80 + "\n")
+        self.output_text.update_idletasks()
+        
+        # Display statistics in Excel-like grid
+        self.display_results_in_grid(stats_df, title="Statistical Summary")
+        
         self.notebook.select(0)
-        self.update_status("Statistics displayed")
+        self.update_status("Statistics displayed in grid format")
     
     def reset_data(self):
         if self.original_df is None:
             messagebox.showwarning("Warning", "No original data!")
             return
-        if messagebox.askyesno("Confirm", "Reset to original data?"):
+        if messagebox.askyesno("Confirm", "Reset to original data? This will clear all filters and modifications."):
+            filtered_count = len(self.df)
             self.df = self.original_df.copy()
+            original_count = len(self.df)
+            
+            # Show clear output message
+            self.output_text.delete(1.0, tk.END)
+            self.output_text.insert(tk.END, "=" * 80 + "\n")
+            self.output_text.insert(tk.END, "DATA RESET - FILTERS CLEARED\n")
+            self.output_text.insert(tk.END, "=" * 80 + "\n\n")
+            self.output_text.insert(tk.END, f"✓ Filtered data had: {filtered_count} rows\n")
+            self.output_text.insert(tk.END, f"✓ Original data restored: {original_count} rows\n")
+            self.output_text.insert(tk.END, f"✓ All filters and modifications cleared\n\n")
+            self.output_text.insert(tk.END, "=" * 80 + "\n")
+            self.output_text.insert(tk.END, "SUCCESS: Full dataset restored!\n")
+            self.output_text.update_idletasks()
+            self.notebook.select(0)  # Switch to Output tab
+            
             self.update_info_panel()
             self.view_data()
-            self.update_status("Data reset")
+            self.update_status("Data reset - all filters cleared")
+            messagebox.showinfo("Success", f"Data reset complete!\n\nRestored {original_count} rows")
     
     def remove_duplicates(self):
         if self.df is None:
             messagebox.showwarning("Warning", "No data loaded!")
             return
-        before = len(self.df)
-        self.df = self.df.drop_duplicates()
-        removed = before - len(self.df)
-        self.update_info_panel()
-        self.update_status(f"Removed {removed} duplicates")
-        messagebox.showinfo("Success", f"Removed {removed} duplicate rows")
+        
+        # Create dialog for duplicate removal options
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Remove Duplicates")
+        dialog.geometry("500x450")
+        
+        ttk.Label(dialog, text="Remove Duplicate Rows", 
+                 font=('Arial', 12, 'bold')).pack(pady=10)
+        
+        # Check for duplicates first
+        all_duplicates = self.df.duplicated(keep=False).sum()
+        ttk.Label(dialog, text=f"Found {all_duplicates} duplicate rows in dataset", 
+                 font=('Arial', 10), foreground='red' if all_duplicates > 0 else 'green').pack(pady=5)
+        
+        # Column selection
+        ttk.Label(dialog, text="Check duplicates based on:", 
+                 font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        
+        col_frame = ttk.Frame(dialog)
+        col_frame.pack(pady=5, fill=tk.BOTH, expand=True)
+        
+        # Add scrollbar for column list
+        scrollbar = ttk.Scrollbar(col_frame)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Listbox for column selection
+        col_listbox = tk.Listbox(col_frame, selectmode=tk.MULTIPLE, 
+                                yscrollcommand=scrollbar.set, height=8)
+        col_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=10)
+        scrollbar.config(command=col_listbox.yview)
+        
+        # Add all columns to listbox
+        for col in self.df.columns:
+            col_listbox.insert(tk.END, col)
+        
+        # Select all by default
+        col_listbox.select_set(0, tk.END)
+        
+        ttk.Label(dialog, text="(Select columns to check - Ctrl+Click for multiple)", 
+                 font=('Arial', 9), foreground='gray').pack()
+        
+        # Quick select buttons
+        button_frame = ttk.Frame(dialog)
+        button_frame.pack(pady=10)
+        
+        def select_all():
+            col_listbox.select_set(0, tk.END)
+        
+        def select_none():
+            col_listbox.selection_clear(0, tk.END)
+        
+        ttk.Button(button_frame, text="Select All", command=select_all).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Clear All", command=select_none).pack(side=tk.LEFT, padx=5)
+        
+        # Keep option
+        ttk.Label(dialog, text="Which duplicate to keep:", 
+                 font=('Arial', 10, 'bold')).pack(pady=(10,5))
+        
+        keep_var = tk.StringVar(value="first")
+        ttk.Radiobutton(dialog, text="Keep first occurrence (recommended)", 
+                       variable=keep_var, value="first").pack(pady=2)
+        ttk.Radiobutton(dialog, text="Keep last occurrence", 
+                       variable=keep_var, value="last").pack(pady=2)
+        ttk.Radiobutton(dialog, text="Remove all duplicates (keep none)", 
+                       variable=keep_var, value=False).pack(pady=2)
+        
+        # Action buttons
+        action_frame = ttk.Frame(dialog)
+        action_frame.pack(pady=20)
+        
+        def preview_duplicates():
+            """Show which rows will be removed"""
+            selected_indices = col_listbox.curselection()
+            if not selected_indices:
+                messagebox.showwarning("Warning", "Please select at least one column!")
+                return
+            
+            subset_cols = [col_listbox.get(i) for i in selected_indices]
+            keep_option = keep_var.get()
+            if keep_option == "False":
+                keep_option = False
+            
+            # Find duplicates
+            dup_mask = self.df.duplicated(subset=subset_cols, keep=keep_option)
+            duplicates = self.df[dup_mask]
+            
+            if len(duplicates) == 0:
+                messagebox.showinfo("Preview", "No duplicates found with selected columns!")
+            else:
+                preview_window = tk.Toplevel(dialog)
+                preview_window.title("Duplicate Preview")
+                preview_window.geometry("800x400")
+                
+                ttk.Label(preview_window, 
+                         text=f"These {len(duplicates)} rows will be REMOVED:", 
+                         font=('Arial', 11, 'bold'), foreground='red').pack(pady=10)
+                
+                text_widget = tk.Text(preview_window, wrap=tk.NONE)
+                text_widget.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+                
+                text_widget.insert(tk.END, duplicates.to_string())
+                text_widget.config(state=tk.DISABLED)
+        
+        def remove():
+            """Perform duplicate removal"""
+            selected_indices = col_listbox.curselection()
+            if not selected_indices:
+                messagebox.showwarning("Warning", "Please select at least one column!")
+                return
+            
+            subset_cols = [col_listbox.get(i) for i in selected_indices]
+            keep_option = keep_var.get()
+            if keep_option == "False":
+                keep_option = False
+            
+            before = len(self.df)
+            try:
+                # Use cleaning service
+                cleaned_df, removed = self.cleaning_service.remove_duplicates(
+                    self.df, 
+                    subset=subset_cols, 
+                    keep=keep_option
+                )
+                self.df = cleaned_df
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to remove duplicates: {str(e)}")
+                return
+            
+            # Output to text area
+            self.output_text.delete(1.0, tk.END)
+            self.output_text.insert(tk.END, "=" * 80 + "\n")
+            self.output_text.insert(tk.END, "REMOVE DUPLICATES - OPERATION COMPLETE\n")
+            self.output_text.insert(tk.END, "=" * 80 + "\n\n")
+            self.output_text.insert(tk.END, f"✓ Original rows: {before}\n")
+            self.output_text.insert(tk.END, f"✓ Duplicates removed: {removed}\n")
+            self.output_text.insert(tk.END, f"✓ Remaining rows: {len(self.df)}\n\n")
+            self.output_text.insert(tk.END, f"Columns checked: {', '.join(subset_cols)}\n")
+            self.output_text.insert(tk.END, f"Keep strategy: {keep_option}\n\n")
+            self.output_text.insert(tk.END, "=" * 80 + "\n")
+            if removed > 0:
+                self.output_text.insert(tk.END, f"SUCCESS: {removed} duplicate row(s) removed from dataset\n")
+            else:
+                self.output_text.insert(tk.END, "INFO: No duplicates found in selected columns\n")
+            self.output_text.update_idletasks()
+            self.notebook.select(0)  # Switch to Output tab
+            
+            self.update_info_panel()
+            self.update_status(f"Removed {removed} duplicates")
+            messagebox.showinfo("Success", 
+                              f"Removed {removed} duplicate rows\n\n"
+                              f"Based on columns: {', '.join(subset_cols)}\n"
+                              f"Keep strategy: {keep_option}")
+            dialog.destroy()
+        
+        ttk.Button(action_frame, text="Preview", command=preview_duplicates).pack(side=tk.LEFT, padx=5)
+        ttk.Button(action_frame, text="Remove Duplicates", command=remove, 
+                  style='Action.TButton').pack(side=tk.LEFT, padx=5)
+        ttk.Button(action_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
     
     def handle_missing_values(self):
         if self.df is None:
@@ -558,54 +1014,1610 @@ class DataAnalystApp:
         
         dialog = tk.Toplevel(self.root)
         dialog.title("Handle Missing Values")
-        dialog.geometry("400x250")
+        dialog.geometry("500x400")
         
-        ttk.Label(dialog, text=f"Missing: {self.df.isnull().sum().sum()}", font=('Arial', 12, 'bold')).pack(pady=10)
+        ttk.Label(dialog, text=f"Total Missing Values: {self.df.isnull().sum().sum()}", 
+                 font=('Arial', 12, 'bold')).pack(pady=10)
         
+        # Column selection
+        ttk.Label(dialog, text="Select column (optional - leave for all):", 
+                 font=('Arial', 10)).pack(pady=5)
+        col_var = tk.StringVar(value="All Columns")
+        cols_list = ["All Columns"] + list(self.df.columns)
+        ttk.Combobox(dialog, textvariable=col_var, values=cols_list, 
+                     state='readonly', width=40).pack(pady=5)
+        
+        # Method selection
+        ttk.Label(dialog, text="Select method:", font=('Arial', 10, 'bold')).pack(pady=10)
         method_var = tk.StringVar(value="drop")
-        ttk.Radiobutton(dialog, text="Drop rows", variable=method_var, value="drop").pack(pady=5)
-        ttk.Radiobutton(dialog, text="Fill with mean", variable=method_var, value="mean").pack(pady=5)
-        ttk.Radiobutton(dialog, text="Fill with median", variable=method_var, value="median").pack(pady=5)
-        ttk.Radiobutton(dialog, text="Forward fill", variable=method_var, value="ffill").pack(pady=5)
+        ttk.Radiobutton(dialog, text="Drop rows with missing values", 
+                       variable=method_var, value="drop").pack(pady=3)
+        ttk.Radiobutton(dialog, text="Fill with mean (numeric only)", 
+                       variable=method_var, value="mean").pack(pady=3)
+        ttk.Radiobutton(dialog, text="Fill with median (numeric only)", 
+                       variable=method_var, value="median").pack(pady=3)
+        ttk.Radiobutton(dialog, text="Fill with custom value", 
+                       variable=method_var, value="custom").pack(pady=3)
+        ttk.Radiobutton(dialog, text="Forward fill", 
+                       variable=method_var, value="ffill").pack(pady=3)
+        
+        # Custom value input
+        ttk.Label(dialog, text="Custom value (if selected):", 
+                 font=('Arial', 10)).pack(pady=5)
+        custom_var = tk.StringVar(value="")
+        ttk.Entry(dialog, textvariable=custom_var, width=30).pack(pady=5)
         
         def apply():
             method = method_var.get()
-            if method == "drop":
-                self.df = self.df.dropna()
-            elif method == "mean":
-                self.df.fillna(self.df.mean(numeric_only=True), inplace=True)
-            elif method == "median":
-                self.df.fillna(self.df.median(numeric_only=True), inplace=True)
-            elif method == "ffill":
-                self.df.fillna(method='ffill', inplace=True)
+            selected_col = col_var.get()
             
-            self.update_info_panel()
-            self.update_status(f"Handled missing values: {method}")
-            messagebox.showinfo("Success", f"Applied {method} method")
-            dialog.destroy()
+            try:
+                if selected_col == "All Columns":
+                    # Apply to all columns
+                    if method == "drop":
+                        self.df = self.df.dropna()
+                    elif method == "mean":
+                        self.df.fillna(self.df.mean(numeric_only=True), inplace=True)
+                    elif method == "median":
+                        self.df.fillna(self.df.median(numeric_only=True), inplace=True)
+                    elif method == "custom":
+                        custom_val = custom_var.get()
+                        if custom_val == "":
+                            messagebox.showwarning("Warning", "Please enter a custom value!")
+                            return
+                        self.df.fillna(custom_val, inplace=True)
+                    elif method == "ffill":
+                        self.df.fillna(method='ffill', inplace=True)
+                else:
+                    # Apply to specific column
+                    if method == "drop":
+                        self.df = self.df.dropna(subset=[selected_col])
+                    elif method == "mean":
+                        if pd.api.types.is_numeric_dtype(self.df[selected_col]):
+                            self.df[selected_col].fillna(self.df[selected_col].mean(), inplace=True)
+                        else:
+                            messagebox.showwarning("Warning", f"{selected_col} is not numeric!")
+                            return
+                    elif method == "median":
+                        if pd.api.types.is_numeric_dtype(self.df[selected_col]):
+                            self.df[selected_col].fillna(self.df[selected_col].median(), inplace=True)
+                        else:
+                            messagebox.showwarning("Warning", f"{selected_col} is not numeric!")
+                            return
+                    elif method == "custom":
+                        custom_val = custom_var.get()
+                        if custom_val == "":
+                            messagebox.showwarning("Warning", "Please enter a custom value!")
+                            return
+                        self.df[selected_col].fillna(custom_val, inplace=True)
+                    elif method == "ffill":
+                        self.df[selected_col].fillna(method='ffill', inplace=True)
+                
+                # Output to text area
+                self.output_text.delete(1.0, tk.END)
+                self.output_text.insert(tk.END, "=" * 80 + "\n")
+                self.output_text.insert(tk.END, "HANDLE MISSING VALUES - OPERATION COMPLETE\n")
+                self.output_text.insert(tk.END, "=" * 80 + "\n\n")
+                self.output_text.insert(tk.END, f"Method applied: {method.upper()}\n")
+                self.output_text.insert(tk.END, f"Target: {selected_col}\n")
+                if method == "custom":
+                    self.output_text.insert(tk.END, f"Custom value: {custom_var.get()}\n")
+                self.output_text.insert(tk.END, f"\n✓ Current missing values in dataset: {self.df.isnull().sum().sum()}\n")
+                self.output_text.insert(tk.END, f"✓ Total rows: {len(self.df)}\n\n")
+                self.output_text.insert(tk.END, "=" * 80 + "\n")
+                self.output_text.insert(tk.END, f"SUCCESS: Missing values handled using {method} method\n")
+                self.output_text.update_idletasks()
+                self.notebook.select(0)  # Switch to Output tab
+                
+                self.update_info_panel()
+                self.update_status(f"Handled missing values: {method}")
+                messagebox.showinfo("Success", f"Applied {method} method to {selected_col}")
+                dialog.destroy()
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to handle missing values:\n{str(e)}")
         
-        ttk.Button(dialog, text="Apply", command=apply).pack(pady=20)
+        ttk.Button(dialog, text="Apply", command=apply).pack(pady=15)
     
     def remove_outliers(self):
         if self.df is None:
             messagebox.showwarning("Warning", "No data loaded!")
             return
         
-        numeric_cols = self.df.select_dtypes(include=[np.number]).columns
-        before = len(self.df)
+        numeric_cols = self.df.select_dtypes(include=[np.number]).columns.tolist()
+        if not numeric_cols:
+            messagebox.showwarning("Warning", "No numeric columns found!")
+            return
         
-        for col in numeric_cols:
-            Q1 = self.df[col].quantile(0.25)
-            Q3 = self.df[col].quantile(0.75)
-            IQR = Q3 - Q1
-            self.df = self.df[(self.df[col] >= Q1 - 1.5*IQR) & (self.df[col] <= Q3 + 1.5*IQR)]
+        # Create advanced dialog
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Remove Outliers")
+        dialog.geometry("550x500")
         
-        removed = before - len(self.df)
-        self.update_info_panel()
-        self.update_status(f"Removed {removed} outliers")
-        messagebox.showinfo("Success", f"Removed {removed} outlier rows")
+        ttk.Label(dialog, text="Remove Outlier Detection & Removal", 
+                 font=('Arial', 12, 'bold')).pack(pady=10)
+        
+        # Column selection
+        ttk.Label(dialog, text="Select column to check for outliers:", 
+                 font=('Arial', 10, 'bold')).pack(pady=(10,5))
+        
+        col_var = tk.StringVar(value=numeric_cols[0])
+        col_dropdown = ttk.Combobox(dialog, textvariable=col_var, 
+                                    values=numeric_cols, state='readonly', width=35)
+        col_dropdown.pack(pady=5)
+        
+        # Method selection
+        ttk.Label(dialog, text="Detection method:", 
+                 font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        
+        method_var = tk.StringVar(value="iqr")
+        ttk.Radiobutton(dialog, text="IQR Method (Interquartile Range) - Recommended", 
+                       variable=method_var, value="iqr").pack(pady=2, anchor='w', padx=50)
+        ttk.Radiobutton(dialog, text="Z-Score Method (Standard Deviation)", 
+                       variable=method_var, value="zscore").pack(pady=2, anchor='w', padx=50)
+        ttk.Radiobutton(dialog, text="Percentile Method (Custom range)", 
+                       variable=method_var, value="percentile").pack(pady=2, anchor='w', padx=50)
+        
+        # Threshold settings
+        threshold_frame = ttk.LabelFrame(dialog, text="Threshold Settings", padding=10)
+        threshold_frame.pack(pady=15, padx=20, fill=tk.X)
+        
+        # IQR multiplier
+        ttk.Label(threshold_frame, text="IQR Multiplier:").grid(row=0, column=0, sticky='w', pady=5)
+        iqr_var = tk.DoubleVar(value=1.5)
+        iqr_spin = ttk.Spinbox(threshold_frame, from_=0.5, to=5.0, increment=0.5, 
+                               textvariable=iqr_var, width=10)
+        iqr_spin.grid(row=0, column=1, padx=10)
+        ttk.Label(threshold_frame, text="(Standard: 1.5, Strict: 3.0)", 
+                 font=('Arial', 8), foreground='gray').grid(row=0, column=2, sticky='w')
+        
+        # Z-Score threshold
+        ttk.Label(threshold_frame, text="Z-Score Threshold:").grid(row=1, column=0, sticky='w', pady=5)
+        zscore_var = tk.DoubleVar(value=3.0)
+        zscore_spin = ttk.Spinbox(threshold_frame, from_=1.0, to=5.0, increment=0.5, 
+                                  textvariable=zscore_var, width=10)
+        zscore_spin.grid(row=1, column=1, padx=10)
+        ttk.Label(threshold_frame, text="(Standard: 3.0, Strict: 2.5)", 
+                 font=('Arial', 8), foreground='gray').grid(row=1, column=2, sticky='w')
+        
+        # Percentile range
+        ttk.Label(threshold_frame, text="Keep Percentile Range:").grid(row=2, column=0, sticky='w', pady=5)
+        perc_frame = ttk.Frame(threshold_frame)
+        perc_frame.grid(row=2, column=1, columnspan=2, sticky='w', padx=10)
+        perc_low_var = tk.DoubleVar(value=1.0)
+        perc_high_var = tk.DoubleVar(value=99.0)
+        ttk.Spinbox(perc_frame, from_=0.0, to=50.0, increment=1.0, 
+                   textvariable=perc_low_var, width=8).pack(side=tk.LEFT)
+        ttk.Label(perc_frame, text=" to ").pack(side=tk.LEFT)
+        ttk.Spinbox(perc_frame, from_=50.0, to=100.0, increment=1.0, 
+                   textvariable=perc_high_var, width=8).pack(side=tk.LEFT)
+        
+        # Results display
+        result_text = tk.Text(dialog, height=6, width=60, wrap=tk.WORD)
+        result_text.pack(pady=10, padx=20)
+        result_text.config(state=tk.DISABLED)
+        
+        def detect_outliers():
+            """Detect and show outliers without removing"""
+            col = col_var.get()
+            method = method_var.get()
+            
+            result_text.config(state=tk.NORMAL)
+            result_text.delete(1.0, tk.END)
+            
+            try:
+                if method == "iqr":
+                    Q1 = self.df[col].quantile(0.25)
+                    Q3 = self.df[col].quantile(0.75)
+                    IQR = Q3 - Q1
+                    multiplier = iqr_var.get()
+                    lower_bound = Q1 - multiplier * IQR
+                    upper_bound = Q3 + multiplier * IQR
+                    outliers = self.df[(self.df[col] < lower_bound) | (self.df[col] > upper_bound)]
+                    
+                    result_text.insert(tk.END, f"📊 IQR Method (Multiplier: {multiplier})\n")
+                    result_text.insert(tk.END, f"Q1: {Q1:.2f}, Q3: {Q3:.2f}, IQR: {IQR:.2f}\n")
+                    result_text.insert(tk.END, f"Valid range: {lower_bound:.2f} to {upper_bound:.2f}\n")
+                    
+                elif method == "zscore":
+                    from scipy import stats
+                    threshold = zscore_var.get()
+                    z_scores = np.abs(stats.zscore(self.df[col].dropna()))
+                    outliers = self.df[np.abs(stats.zscore(self.df[col])) > threshold]
+                    
+                    result_text.insert(tk.END, f"📊 Z-Score Method (Threshold: {threshold})\n")
+                    result_text.insert(tk.END, f"Mean: {self.df[col].mean():.2f}, Std: {self.df[col].std():.2f}\n")
+                    
+                elif method == "percentile":
+                    low_perc = perc_low_var.get()
+                    high_perc = perc_high_var.get()
+                    lower_bound = self.df[col].quantile(low_perc / 100)
+                    upper_bound = self.df[col].quantile(high_perc / 100)
+                    outliers = self.df[(self.df[col] < lower_bound) | (self.df[col] > upper_bound)]
+                    
+                    result_text.insert(tk.END, f"📊 Percentile Method ({low_perc}% - {high_perc}%)\n")
+                    result_text.insert(tk.END, f"Valid range: {lower_bound:.2f} to {upper_bound:.2f}\n")
+                
+                result_text.insert(tk.END, f"\n🎯 Found {len(outliers)} outlier rows\n")
+                if len(outliers) > 0:
+                    result_text.insert(tk.END, f"Outlier values: {outliers[col].tolist()[:10]}\n")
+                    if len(outliers) > 10:
+                        result_text.insert(tk.END, f"... and {len(outliers)-10} more")
+                
+            except Exception as e:
+                result_text.insert(tk.END, f"❌ Error: {str(e)}")
+            
+            result_text.config(state=tk.DISABLED)
+        
+        def remove():
+            """Remove detected outliers"""
+            col = col_var.get()
+            method = method_var.get()
+            before = len(self.df)
+            
+            try:
+                # Get threshold based on method
+                if method == "iqr":
+                    threshold = iqr_var.get()
+                elif method == "zscore":
+                    threshold = zscore_var.get()
+                else:  # percentile method not supported in service yet, use IQR as fallback
+                    method = "iqr"
+                    threshold = 1.5
+                
+                # Use cleaning service
+                cleaned_df, removed = self.cleaning_service.remove_outliers(
+                    self.df,
+                    col,
+                    method=method,
+                    threshold=threshold
+                )
+                self.df = cleaned_df
+                
+                # Output to text area
+                self.output_text.delete(1.0, tk.END)
+                self.output_text.insert(tk.END, "=" * 80 + "\n")
+                self.output_text.insert(tk.END, "REMOVE OUTLIERS - OPERATION COMPLETE\n")
+                self.output_text.insert(tk.END, "=" * 80 + "\n\n")
+                self.output_text.insert(tk.END, f"Column analyzed: {col}\n")
+                self.output_text.insert(tk.END, f"Detection method: {method.upper()}\n\n")
+                self.output_text.insert(tk.END, f"✓ Original rows: {before}\n")
+                self.output_text.insert(tk.END, f"✓ Outliers removed: {removed}\n")
+                self.output_text.insert(tk.END, f"✓ Remaining rows: {len(self.df)}\n\n")
+                self.output_text.insert(tk.END, "=" * 80 + "\n")
+                if removed > 0:
+                    self.output_text.insert(tk.END, f"SUCCESS: {removed} outlier row(s) removed from dataset\n")
+                else:
+                    self.output_text.insert(tk.END, "INFO: No outliers detected with current settings\n")
+                self.output_text.update_idletasks()
+                self.notebook.select(0)  # Switch to Output tab
+                
+                self.update_info_panel()
+                self.update_status(f"Removed {removed} outliers")
+                messagebox.showinfo("Success", 
+                                  f"Removed {removed} outlier rows\n\n"
+                                  f"Column: {col}\n"
+                                  f"Method: {method.upper()}")
+                dialog.destroy()
+                
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to remove outliers:\n{str(e)}")
+        
+        # Action buttons
+        button_frame = ttk.Frame(dialog)
+        button_frame.pack(pady=15)
+        
+        ttk.Button(button_frame, text="Detect Outliers", 
+                  command=detect_outliers).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Remove Outliers", command=remove, 
+                  style='Action.TButton').pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+    
+    def clean_order_ids(self):
+        """Clean Order IDs by removing letter suffixes"""
+        if self.df is None:
+            messagebox.showwarning("Warning", "No data loaded!")
+            return
+        
+        # Create dialog
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Clean Order IDs")
+        dialog.geometry("600x550")
+        
+        ttk.Label(dialog, text="Clean Order IDs - Remove Letter Suffixes", 
+                 font=('Arial', 12, 'bold')).pack(pady=15)
+        
+        # Instructions
+        info_frame = ttk.LabelFrame(dialog, text="What This Does", padding=10)
+        info_frame.pack(pady=10, padx=20, fill=tk.X)
+        ttk.Label(info_frame, text="• Removes letter suffixes from Order IDs (e.g., SH10031B → SH10031)\n"
+                                   "• Useful for cleaning test orders or accidental letter additions\n"
+                                   "• Preserves the base ID number",
+                 justify=tk.LEFT).pack()
+        
+        # Column selection
+        ttk.Label(dialog, text="Select Order ID column:", 
+                 font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        
+        col_var = tk.StringVar()
+        # Try to auto-detect order_id column
+        order_cols = [col for col in self.df.columns if 'id' in col.lower() and 'order' in col.lower()]
+        if order_cols:
+            col_var.set(order_cols[0])
+        elif len(self.df.columns) > 0:
+            col_var.set(self.df.columns[0])
+        
+        col_dropdown = ttk.Combobox(dialog, textvariable=col_var, 
+                                    values=list(self.df.columns), state='readonly', width=35)
+        col_dropdown.pack(pady=5)
+        
+        # Pattern options
+        ttk.Label(dialog, text="Cleaning pattern:", 
+                 font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        
+        pattern_var = tk.StringVar(value="all_letters")
+        ttk.Radiobutton(dialog, text="Remove all letters at end (e.g., SH10031B → SH10031)", 
+                       variable=pattern_var, value="all_letters").pack(pady=2, anchor='w', padx=50)
+        ttk.Radiobutton(dialog, text="Remove single letter only (e.g., SH10031B → SH10031, but keep SH10ABC)", 
+                       variable=pattern_var, value="single_letter").pack(pady=2, anchor='w', padx=50)
+        ttk.Radiobutton(dialog, text="Remove numbers at end (e.g., SH10031B1 → SH10031B)", 
+                       variable=pattern_var, value="numbers_only").pack(pady=2, anchor='w', padx=50)
+        ttk.Radiobutton(dialog, text="Clean whitespace (trim + remove double spaces: ' SH  10031 ' → 'SH 10031')", 
+                       variable=pattern_var, value="whitespace").pack(pady=2, anchor='w', padx=50)
+        ttk.Radiobutton(dialog, text="Custom pattern (specify what to remove)", 
+                       variable=pattern_var, value="custom").pack(pady=2, anchor='w', padx=50)
+        
+        # Position selector
+        ttk.Label(dialog, text="Remove from:", 
+                 font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        
+        position_var = tk.StringVar(value="end")
+        position_frame = ttk.Frame(dialog)
+        position_frame.pack(pady=5, padx=50)
+        ttk.Radiobutton(position_frame, text="End (e.g., SH10031B1 → SH10031B)", 
+                       variable=position_var, value="end").pack(side=tk.LEFT, padx=10)
+        ttk.Radiobutton(position_frame, text="Start (e.g., 1SH10031B → SH10031B)", 
+                       variable=position_var, value="start").pack(side=tk.LEFT, padx=10)
+        ttk.Radiobutton(position_frame, text="Both sides", 
+                       variable=position_var, value="both").pack(side=tk.LEFT, padx=10)
+        
+        # Custom pattern input
+        custom_frame = ttk.Frame(dialog)
+        custom_frame.pack(pady=5, padx=50, fill=tk.X)
+        ttk.Label(custom_frame, text="Custom pattern:").pack(side=tk.LEFT, padx=5)
+        custom_pattern_var = tk.StringVar()
+        custom_entry = ttk.Entry(custom_frame, textvariable=custom_pattern_var, width=20)
+        custom_entry.pack(side=tk.LEFT, padx=5)
+        ttk.Label(custom_frame, text="(e.g., '1' or '[0-9]+' for numbers)", 
+                 font=('Arial', 8), foreground='gray').pack(side=tk.LEFT)
+        
+        # Preview area
+        preview_frame = ttk.LabelFrame(dialog, text="Preview Changes", padding=10)
+        preview_frame.pack(pady=15, padx=20, fill=tk.BOTH, expand=True)
+        
+        preview_text = tk.Text(preview_frame, height=10, width=60, wrap=tk.NONE)
+        preview_scroll = ttk.Scrollbar(preview_frame, orient=tk.VERTICAL, command=preview_text.yview)
+        preview_text.config(yscrollcommand=preview_scroll.set)
+        preview_text.grid(row=0, column=0, sticky='nsew')
+        preview_scroll.grid(row=0, column=1, sticky='ns')
+        preview_frame.grid_rowconfigure(0, weight=1)
+        preview_frame.grid_columnconfigure(0, weight=1)
+        preview_text.config(state=tk.DISABLED)
+        
+        def show_preview():
+            """Show preview of changes"""
+            col = col_var.get()
+            if not col:
+                messagebox.showwarning("Warning", "Please select a column!")
+                return
+            
+            pattern = pattern_var.get()
+            preview_text.config(state=tk.NORMAL)
+            preview_text.delete(1.0, tk.END)
+            
+            try:
+                import re
+                position = position_var.get()
+                
+                # Special handling for whitespace cleaning
+                if pattern == "whitespace":
+                    # Find IDs with whitespace issues
+                    whitespace_issues = self.df[col].astype(str)
+                    # Check for leading/trailing spaces or multiple spaces
+                    needs_cleaning = (whitespace_issues != whitespace_issues.str.strip()) | \
+                                   (whitespace_issues.str.contains(r'\s{2,}', regex=True, na=False))
+                    affected = self.df[needs_cleaning]
+                    
+                    if len(affected) == 0:
+                        preview_text.insert(tk.END, "✓ No whitespace issues found\n")
+                        preview_text.insert(tk.END, "All Order IDs are already clean!\n")
+                    else:
+                        preview_text.insert(tk.END, f"📋 Found {len(affected)} ID(s) with whitespace issues:\n\n")
+                        preview_text.insert(tk.END, f"{'Original ID':<25} → {'Cleaned ID':<25}\n")
+                        preview_text.insert(tk.END, "=" * 55 + "\n")
+                        
+                        for idx in affected.index[:20]:
+                            original_id = str(self.df.loc[idx, col])
+                            cleaned_id = re.sub(r'\s+', ' ', original_id).strip()
+                            # Show spaces with quotes for visibility
+                            preview_text.insert(tk.END, f"'{original_id}'<{len(original_id):<3} → '{cleaned_id}'<{len(cleaned_id):<3}\n")
+                        
+                        if len(affected) > 20:
+                            preview_text.insert(tk.END, f"\n... and {len(affected) - 20} more\n")
+                else:
+                    # Determine base pattern for letter/number removal
+                    if pattern == "all_letters":
+                        base_pattern = r'[A-Z]+'
+                        pattern_desc = "letters"
+                    elif pattern == "single_letter":
+                        base_pattern = r'[A-Z]'
+                        pattern_desc = "single letter"
+                    elif pattern == "numbers_only":
+                        base_pattern = r'[0-9]+'
+                        pattern_desc = "numbers"
+                    elif pattern == "custom":
+                        custom_pat = custom_pattern_var.get()
+                        if not custom_pat:
+                            preview_text.insert(tk.END, "⚠️ Please enter a custom pattern to remove\n")
+                            preview_text.config(state=tk.DISABLED)
+                            return
+                        base_pattern = custom_pat
+                        pattern_desc = f"custom pattern '{custom_pat}'"
+                    
+                    # Apply position anchors
+                    if position == "end":
+                        regex_pattern = base_pattern + '$'
+                        position_desc = "at end"
+                    elif position == "start":
+                        regex_pattern = '^' + base_pattern
+                        position_desc = "at start"
+                    else:  # both
+                        regex_pattern = f'^{base_pattern}|{base_pattern}$'
+                        position_desc = "at start or end"
+                    
+                    affected = self.df[self.df[col].astype(str).str.contains(regex_pattern, regex=True, na=False)]
+                    
+                    if len(affected) == 0:
+                        preview_text.insert(tk.END, f"✓ No IDs found with {pattern_desc} {position_desc}\n")
+                        preview_text.insert(tk.END, "All Order IDs are already clean!\n")
+                    else:
+                        preview_text.insert(tk.END, f"📋 Found {len(affected)} ID(s) with {pattern_desc} {position_desc}:\n\n")
+                        preview_text.insert(tk.END, f"{'Original ID':<20} → {'Cleaned ID':<20}\n")
+                        preview_text.insert(tk.END, "=" * 45 + "\n")
+                        
+                        for original_id in affected[col].head(20):
+                            cleaned_id = str(original_id).strip()
+                            cleaned_id = re.sub(regex_pattern, '', cleaned_id)
+                            preview_text.insert(tk.END, f"{str(original_id):<20} → {cleaned_id:<20}\n")
+                    
+                    if len(affected) > 20:
+                        preview_text.insert(tk.END, f"\n... and {len(affected) - 20} more\n")
+                
+            except Exception as e:
+                preview_text.insert(tk.END, f"❌ Error: {str(e)}")
+            
+            preview_text.config(state=tk.DISABLED)
+        
+        def apply_cleaning():
+            """Apply the cleaning"""
+            col = col_var.get()
+            if not col:
+                messagebox.showwarning("Warning", "Please select a column!")
+                return
+            
+            pattern = pattern_var.get()
+            before_count = len(self.df)
+            
+            try:
+                import re
+                position = position_var.get()
+                
+                # Special handling for whitespace cleaning
+                if pattern == "whitespace":
+                    # Find IDs with whitespace issues
+                    whitespace_issues = self.df[col].astype(str)
+                    needs_cleaning = (whitespace_issues != whitespace_issues.str.strip()) | \
+                                   (whitespace_issues.str.contains(r'\s{2,}', regex=True, na=False))
+                    affected_count = needs_cleaning.sum()
+                    
+                    # Apply whitespace cleaning: trim and replace multiple spaces with single space
+                    self.df[col] = self.df[col].astype(str).str.replace(r'\s+', ' ', regex=True).str.strip()
+                    
+                    pattern_desc = "whitespace (trim + collapse multiple spaces)"
+                    position_desc = ""
+                else:
+                    # Determine base pattern for letter/number removal
+                    if pattern == "all_letters":
+                        base_pattern = r'[A-Z]+'
+                        pattern_desc = "letters"
+                    elif pattern == "single_letter":
+                        base_pattern = r'[A-Z]'
+                        pattern_desc = "single letter"
+                    elif pattern == "numbers_only":
+                        base_pattern = r'[0-9]+'
+                        pattern_desc = "numbers"
+                    elif pattern == "custom":
+                        custom_pat = custom_pattern_var.get()
+                        if not custom_pat:
+                            messagebox.showwarning("Warning", "Please enter a custom pattern!")
+                            return
+                        base_pattern = custom_pat
+                        pattern_desc = f"custom pattern '{custom_pat}'"
+                    
+                    # Apply position anchors
+                    if position == "end":
+                        regex_pattern = base_pattern + '$'
+                        position_desc = "at end"
+                    elif position == "start":
+                        regex_pattern = '^' + base_pattern
+                        position_desc = "at start"
+                    else:  # both
+                        regex_pattern = f'^{base_pattern}|{base_pattern}$'
+                        position_desc = "at start or end"
+                    
+                    # Count affected rows before cleaning
+                    affected = self.df[self.df[col].astype(str).str.contains(regex_pattern, regex=True, na=False)]
+                    affected_count = len(affected)
+                    
+                    # Safety check: Detect if any IDs would become empty
+                    test_cleaned = affected[col].astype(str).str.replace(regex_pattern, '', regex=True)
+                    empty_after_clean = test_cleaned[test_cleaned.str.strip() == '']
+                    
+                    if len(empty_after_clean) > 0:
+                        # Show warning dialog
+                        warning_msg = f"⚠️ WARNING: This pattern would COMPLETELY REMOVE {len(empty_after_clean)} Order ID(s)!\n\n"
+                        warning_msg += "These IDs would become empty:\n"
+                        empty_indices = empty_after_clean.index.tolist()[:10]
+                        for idx in empty_indices:
+                            original_value = self.df.loc[idx, col]
+                            warning_msg += f"  • {original_value}\n"
+                        if len(empty_after_clean) > 10:
+                            warning_msg += f"  ... and {len(empty_after_clean) - 10} more\n"
+                        warning_msg += f"\nThis might DELETE your entire Order ID column!\n\n"
+                        warning_msg += "Are you SURE you want to proceed?\n"
+                        warning_msg += "(Hint: Try a different pattern or position)"
+                        
+                        confirm = messagebox.askyesno("⚠️ Destructive Operation Warning", 
+                                                     warning_msg, 
+                                                     icon='warning',
+                                                     default='no')
+                        if not confirm:
+                            return  # User cancelled
+                    
+                    # Apply cleaning (for non-whitespace patterns)
+                    self.df[col] = self.df[col].astype(str).str.replace(regex_pattern, '', regex=True)
+                
+                # Output results
+                self.output_text.delete(1.0, tk.END)
+                self.output_text.insert(tk.END, "=" * 80 + "\n")
+                self.output_text.insert(tk.END, "CLEAN ORDER IDs - OPERATION COMPLETE\n")
+                self.output_text.insert(tk.END, "=" * 80 + "\n\n")
+                self.output_text.insert(tk.END, f"Column cleaned: {col}\n")
+                self.output_text.insert(tk.END, f"Removed: {pattern_desc} {position_desc}\n\n")
+                self.output_text.insert(tk.END, f"✓ Total rows: {before_count}\n")
+                self.output_text.insert(tk.END, f"✓ IDs cleaned: {affected_count}\n\n")
+                self.output_text.insert(tk.END, "=" * 80 + "\n")
+                
+                if affected_count > 0:
+                    self.output_text.insert(tk.END, f"SUCCESS: Cleaned {affected_count} Order ID(s)\n")
+                    self.output_text.insert(tk.END, "Examples: SH10031B → SH10031, SH10005A → SH10005\n")
+                else:
+                    self.output_text.insert(tk.END, "INFO: No Order IDs needed cleaning\n")
+                
+                self.output_text.update_idletasks()
+                self.notebook.select(0)  # Switch to Output tab
+                
+                self.update_info_panel()
+                self.view_data()  # Refresh data view
+                self.update_status(f"Cleaned {affected_count} Order IDs")
+                
+                messagebox.showinfo("Success", 
+                                  f"Order IDs cleaned successfully!\n\n"
+                                  f"Column: {col}\n"
+                                  f"IDs cleaned: {affected_count}")
+                dialog.destroy()
+                
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to clean Order IDs:\n{str(e)}")
+        
+        # Action buttons
+        button_frame = ttk.Frame(dialog)
+        button_frame.pack(pady=15)
+        
+        ttk.Button(button_frame, text="Preview Changes", 
+                  command=show_preview).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Apply Cleaning", command=apply_cleaning, 
+                  style='Action.TButton').pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+    
+    def smart_fill_missing(self):
+        """Smart fill missing values by looking up matching IDs"""
+        if self.df is None:
+            messagebox.showwarning("Warning", "No data loaded!")
+            return
+        
+        # Find columns with missing values
+        missing_cols = self.df.columns[self.df.isnull().any()].tolist()
+        if not missing_cols:
+            messagebox.showinfo("Info", "No missing values found in the dataset!")
+            return
+        
+        # Create dialog
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Smart Fill Missing Data")
+        dialog.geometry("650x600")
+        
+        ttk.Label(dialog, text="Smart Fill Missing Data - Intelligent Lookup", 
+                 font=('Arial', 12, 'bold')).pack(pady=15)
+        
+        # Instructions
+        info_frame = ttk.LabelFrame(dialog, text="How It Works", padding=10)
+        info_frame.pack(pady=10, padx=20, fill=tk.X)
+        ttk.Label(info_frame, text="• Select column with missing values (e.g., customer_name)\n"
+                                   "• Select lookup key column (e.g., customer_id)\n"
+                                   "• System finds matching rows and fills missing values\n"
+                                   "• Preview shows what will be filled",
+                 justify=tk.LEFT).pack()
+        
+        # Column with missing values
+        ttk.Label(dialog, text="Column with missing values:", 
+                 font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        
+        target_col_var = tk.StringVar()
+        target_col_dropdown = ttk.Combobox(dialog, textvariable=target_col_var,
+                                          values=missing_cols, state='readonly', width=25)
+        target_col_dropdown.pack(pady=5)
+        if missing_cols:
+            target_col_dropdown.current(0)
+        
+        # Lookup key column
+        ttk.Label(dialog, text="Lookup key column (ID to match on):", 
+                 font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        
+        key_col_var = tk.StringVar()
+        all_cols = list(self.df.columns)
+        key_col_dropdown = ttk.Combobox(dialog, textvariable=key_col_var,
+                                       values=all_cols, state='readonly', width=25)
+        key_col_dropdown.pack(pady=5)
+        # Try to auto-detect ID column
+        id_cols = [col for col in all_cols if 'id' in col.lower()]
+        if id_cols:
+            key_col_var.set(id_cols[0])
+        elif all_cols:
+            key_col_dropdown.current(0)
+        
+        # Preview area
+        preview_frame = ttk.LabelFrame(dialog, text="Preview - What Will Be Filled", padding=10)
+        preview_frame.pack(pady=15, padx=20, fill=tk.BOTH, expand=True)
+        
+        preview_text = tk.Text(preview_frame, height=15, width=70, wrap=tk.NONE)
+        preview_scroll = ttk.Scrollbar(preview_frame, orient=tk.VERTICAL, command=preview_text.yview)
+        preview_text.config(yscrollcommand=preview_scroll.set)
+        preview_text.grid(row=0, column=0, sticky='nsew')
+        preview_scroll.grid(row=0, column=1, sticky='ns')
+        preview_frame.grid_rowconfigure(0, weight=1)
+        preview_frame.grid_columnconfigure(0, weight=1)
+        preview_text.config(state=tk.DISABLED)
+        
+        def show_preview():
+            """Preview what will be filled"""
+            preview_text.config(state=tk.NORMAL)
+            preview_text.delete(1.0, tk.END)
+            
+            target_col = target_col_var.get()
+            key_col = key_col_var.get()
+            
+            if not target_col or not key_col:
+                preview_text.insert(tk.END, "⚠️ Please select both columns\n")
+                preview_text.config(state=tk.DISABLED)
+                return
+            
+            try:
+                # Find rows with missing values in target column
+                missing_mask = self.df[target_col].isnull()
+                missing_rows = self.df[missing_mask]
+                
+                if len(missing_rows) == 0:
+                    preview_text.insert(tk.END, f"✓ No missing values in '{target_col}'\n")
+                    preview_text.config(state=tk.DISABLED)
+                    return
+                
+                # For each missing row, find matching rows and get fill value
+                fill_preview = []
+                for idx, row in missing_rows.iterrows():
+                    key_value = row[key_col]
+                    
+                    # Find matching rows with same key that have non-null target value
+                    matches = self.df[(self.df[key_col] == key_value) & 
+                                     (self.df[target_col].notnull())]
+                    
+                    if len(matches) > 0:
+                        # Get most common value
+                        fill_value = matches[target_col].mode()[0] if len(matches[target_col].mode()) > 0 else matches[target_col].iloc[0]
+                        fill_preview.append({
+                            'index': idx,
+                            'key': key_value,
+                            'fill_value': fill_value,
+                            'found_in': len(matches)
+                        })
+                
+                if not fill_preview:
+                    preview_text.insert(tk.END, f"⚠️ No matching rows found to fill missing values\n\n")
+                    preview_text.insert(tk.END, f"Missing {target_col}: {len(missing_rows)} rows\n")
+                    preview_text.insert(tk.END, f"But no other rows with same {key_col} have valid {target_col}\n")
+                else:
+                    preview_text.insert(tk.END, f"📋 Can fill {len(fill_preview)} of {len(missing_rows)} missing values:\n\n")
+                    preview_text.insert(tk.END, f"{'Row':<6} {key_col:<15} → {target_col}\n")
+                    preview_text.insert(tk.END, "=" * 60 + "\n")
+                    
+                    for item in fill_preview[:15]:
+                        preview_text.insert(tk.END, 
+                            f"{item['index']:<6} {str(item['key']):<15} → {item['fill_value']} "
+                            f"(from {item['found_in']} matches)\n")
+                    
+                    if len(fill_preview) > 15:
+                        preview_text.insert(tk.END, f"\n... and {len(fill_preview) - 15} more\n")
+                    
+                    unfillable = len(missing_rows) - len(fill_preview)
+                    if unfillable > 0:
+                        preview_text.insert(tk.END, f"\n⚠️ {unfillable} rows cannot be filled (no matching {key_col})\n")
+                
+            except Exception as e:
+                preview_text.insert(tk.END, f"❌ Error: {str(e)}")
+            
+            preview_text.config(state=tk.DISABLED)
+        
+        def apply_fill():
+            """Apply the smart fill"""
+            target_col = target_col_var.get()
+            key_col = key_col_var.get()
+            
+            if not target_col or not key_col:
+                messagebox.showwarning("Warning", "Please select both columns!")
+                return
+            
+            try:
+                # Find rows with missing values
+                missing_mask = self.df[target_col].isnull()
+                missing_rows = self.df[missing_mask]
+                before_count = len(missing_rows)
+                
+                # Use cleaning service
+                cleaned_df, filled_count = self.cleaning_service.smart_fill_missing(
+                    self.df,
+                    target_col,
+                    key_col
+                )
+                self.df = cleaned_df
+                
+                # Output results
+                self.output_text.delete(1.0, tk.END)
+                self.output_text.insert(tk.END, "=" * 80 + "\n")
+                self.output_text.insert(tk.END, "SMART FILL MISSING DATA - COMPLETE\n")
+                self.output_text.insert(tk.END, "=" * 80 + "\n\n")
+                self.output_text.insert(tk.END, f"Target column: {target_col}\n")
+                self.output_text.insert(tk.END, f"Lookup key: {key_col}\n\n")
+                self.output_text.insert(tk.END, f"✓ Missing values before: {before_count}\n")
+                self.output_text.insert(tk.END, f"✓ Values filled: {filled_count}\n")
+                self.output_text.insert(tk.END, f"✓ Still missing: {before_count - filled_count}\n\n")
+                self.output_text.insert(tk.END, "=" * 80 + "\n")
+                
+                if filled_count > 0:
+                    self.output_text.insert(tk.END, f"SUCCESS: Filled {filled_count} missing value(s)\n")
+                    self.output_text.insert(tk.END, f"Example: Found {target_col} by matching {key_col}\n")
+                else:
+                    self.output_text.insert(tk.END, "INFO: No values could be filled (no matching keys found)\n")
+                
+                self.output_text.update_idletasks()
+                self.notebook.select(0)
+                
+                self.update_info_panel()
+                self.view_data()
+                self.update_status(f"Smart filled {filled_count} values")
+                
+                messagebox.showinfo("Success", 
+                                  f"Smart fill complete!\n\n"
+                                  f"Filled: {filled_count} values\n"
+                                  f"Still missing: {before_count - filled_count}")
+                dialog.destroy()
+                
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to fill missing data:\n{str(e)}")
+        
+        # Action buttons
+        action_frame = ttk.Frame(dialog)
+        action_frame.pack(pady=15)
+        
+        ttk.Button(action_frame, text="Preview", command=show_preview).pack(side=tk.LEFT, padx=5)
+        ttk.Button(action_frame, text="Apply Fill", command=apply_fill, 
+                  style='Action.TButton').pack(side=tk.LEFT, padx=5)
+        ttk.Button(action_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+    
+    def data_quality_advisor(self):
+        """AI-powered data quality analysis and recommendations"""
+        if self.df is None:
+            messagebox.showwarning("Warning", "No data loaded!")
+            return
+        
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Data Quality Advisor - AI Recommendations")
+        dialog.geometry("700x600")
+        
+        ttk.Label(dialog, text="🤖 Data Quality Advisor", font=('Arial', 14, 'bold')).pack(pady=15)
+        ttk.Label(dialog, text="Analyzing your data and recommending actions...", font=('Arial', 10)).pack(pady=5)
+        
+        # Create notebook for categories
+        advisor_notebook = ttk.Notebook(dialog)
+        advisor_notebook.pack(fill=tk.BOTH, expand=True, padx=15, pady=10)
+        
+        # Analyze data using AI service
+        recommendations = self.ai_service.analyze_data_quality(self.df)
+        
+        # Group by priority
+        high_priority = [r for r in recommendations if r['priority'] == 'High']
+        medium_priority = [r for r in recommendations if r['priority'] == 'Medium']
+        low_priority = [r for r in recommendations if r['priority'] == 'Low']
+        
+        # High Priority Tab
+        if high_priority:
+            high_frame = ttk.Frame(advisor_notebook)
+            advisor_notebook.add(high_frame, text=f"🔴 High Priority ({len(high_priority)})")
+            self._create_recommendations_view(high_frame, high_priority, dialog)
+        
+        # Medium Priority Tab
+        if medium_priority:
+            med_frame = ttk.Frame(advisor_notebook)
+            advisor_notebook.add(med_frame, text=f"🟡 Medium Priority ({len(medium_priority)})")
+            self._create_recommendations_view(med_frame, medium_priority, dialog)
+        
+        # Low Priority Tab
+        if low_priority:
+            low_frame = ttk.Frame(advisor_notebook)
+            advisor_notebook.add(low_frame, text=f"🟢 Low Priority ({len(low_priority)})")
+            self._create_recommendations_view(low_frame, low_priority, dialog)
+        
+        # All Clear Tab
+        if not recommendations:
+            clear_frame = ttk.Frame(advisor_notebook)
+            advisor_notebook.add(clear_frame, text="✅ All Clear")
+            ttk.Label(clear_frame, text="✅ No data quality issues detected!", 
+                     font=('Arial', 12, 'bold'), foreground='green').pack(pady=50)
+            ttk.Label(clear_frame, text="Your data looks clean and ready for analysis!", 
+                     font=('Arial', 10)).pack(pady=10)
+        
+        # Summary at bottom
+        summary_frame = ttk.Frame(dialog)
+        summary_frame.pack(fill=tk.X, padx=15, pady=10)
+        
+        summary_text = f"Found {len(recommendations)} issue(s): "
+        summary_text += f"{len(high_priority)} High, {len(medium_priority)} Medium, {len(low_priority)} Low"
+        ttk.Label(summary_frame, text=summary_text, font=('Arial', 10, 'bold')).pack()
+        
+        ttk.Button(dialog, text="Close", command=dialog.destroy).pack(pady=10)
+    
+    # Note: _analyze_data_quality() removed - now handled by AIService.analyze_data_quality()
+    
+    def _create_recommendations_view(self, parent, recommendations, dialog):
+        """Create scrollable view of recommendations"""
+        canvas = tk.Canvas(parent)
+        scrollbar = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
+        
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Add recommendations
+        for idx, rec in enumerate(recommendations, 1):
+            rec_frame = ttk.LabelFrame(scrollable_frame, text=f"Issue #{idx}: {rec['issue']}", padding=10)
+            rec_frame.pack(fill=tk.X, padx=10, pady=5)
+            
+            ttk.Label(rec_frame, text=f"Impact: {rec['impact']}", 
+                     font=('Arial', 9), wraplength=550).pack(anchor='w', pady=2)
+            
+            ttk.Label(rec_frame, text=f"Recommended Tool: {rec['tool']}", 
+                     font=('Arial', 9, 'bold'), foreground='blue').pack(anchor='w', pady=2)
+            
+            def make_action(action, dlg):
+                def run_action():
+                    dlg.destroy()
+                    action()
+                return run_action
+            
+            ttk.Button(rec_frame, text=f"🔧 Fix with {rec['tool']}", 
+                      command=make_action(rec['action'], dialog),
+                      style='Action.TButton').pack(anchor='w', pady=5)
+    
+    def ai_report_generator(self):
+        """AI-powered automatic report generation"""
+        if self.df is None:
+            messagebox.showwarning("Warning", "No data loaded!")
+            return
+        
+        dialog = tk.Toplevel(self.root)
+        dialog.title("AI Report Generator")
+        dialog.geometry("800x700")
+        
+        ttk.Label(dialog, text="🤖 AI Report Generator", font=('Arial', 14, 'bold')).pack(pady=15)
+        ttk.Label(dialog, text="Generating comprehensive analysis report...", font=('Arial', 10)).pack(pady=5)
+        
+        # Report display
+        report_frame = ttk.LabelFrame(dialog, text="Generated Report", padding=10)
+        report_frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=10)
+        
+        report_text = scrolledtext.ScrolledText(report_frame, wrap=tk.WORD, font=('Courier', 9))
+        report_text.pack(fill=tk.BOTH, expand=True)
+        
+        # Generate report using AI service
+        report_content = self.ai_service.generate_report(self.df)
+        report_text.insert(1.0, report_content)
+        report_text.config(state=tk.DISABLED)
+        
+        # Export buttons
+        export_frame = ttk.Frame(dialog)
+        export_frame.pack(pady=10)
+        
+        def export_txt():
+            from tkinter import filedialog
+            file_path = filedialog.asksaveasfilename(
+                defaultextension=".txt",
+                filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
+            )
+            if file_path:
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(report_content)
+                messagebox.showinfo("Success", f"Report exported to:\n{file_path}")
+        
+        def copy_to_clipboard():
+            self.root.clipboard_clear()
+            self.root.clipboard_append(report_content)
+            messagebox.showinfo("Success", "Report copied to clipboard!")
+        
+        ttk.Button(export_frame, text="📄 Export as TXT", command=export_txt, style='Action.TButton').pack(side=tk.LEFT, padx=5)
+        ttk.Button(export_frame, text="📋 Copy to Clipboard", command=copy_to_clipboard).pack(side=tk.LEFT, padx=5)
+        ttk.Button(export_frame, text="Close", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+    
+    # Note: _generate_ai_report(), _generate_key_findings(), and _generate_recommendations() removed
+    # These are now handled by AIService.generate_report() which includes all this functionality
+    
+    def find_replace(self):
+        if self.df is None:
+            messagebox.showwarning("Warning", "No data loaded!")
+            return
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Find & Replace")
+        dialog.geometry("550x450")
+        ttk.Label(dialog, text="Find & Replace Values", font=('Arial', 12, 'bold')).pack(pady=15)
+        ttk.Label(dialog, text="Search in:", font=('Arial', 10, 'bold')).pack(pady=(10,5))
+        scope_var = tk.StringVar(value="all")
+        ttk.Radiobutton(dialog, text="All columns", variable=scope_var, value="all").pack(anchor='w', padx=50)
+        ttk.Radiobutton(dialog, text="Specific column", variable=scope_var, value="specific").pack(anchor='w', padx=50)
+        col_var = tk.StringVar()
+        col_dropdown = ttk.Combobox(dialog, textvariable=col_var, values=list(self.df.columns), state='readonly', width=25)
+        col_dropdown.pack(pady=5)
+        if len(self.df.columns) > 0:
+            col_dropdown.current(0)
+        ttk.Label(dialog, text="Find what:", font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        find_var = tk.StringVar()
+        ttk.Entry(dialog, textvariable=find_var, width=40).pack(pady=5)
+        ttk.Label(dialog, text="Replace with:", font=('Arial', 10, 'bold')).pack(pady=(10,5))
+        replace_var = tk.StringVar()
+        ttk.Entry(dialog, textvariable=replace_var, width=40).pack(pady=5)
+        case_sensitive_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(dialog, text="Case sensitive", variable=case_sensitive_var).pack(pady=5)
+        preview_text = scrolledtext.ScrolledText(dialog, height=6, width=60)
+        preview_text.pack(pady=10, padx=20)
+        preview_text.config(state=tk.DISABLED)
+        def show_preview():
+            find_val = find_var.get()
+            if not find_val:
+                messagebox.showwarning("Warning", "Please enter a value to find!")
+                return
+            preview_text.config(state=tk.NORMAL)
+            preview_text.delete(1.0, tk.END)
+            try:
+                count = 0
+                if scope_var.get() == "all":
+                    for col in self.df.columns:
+                        if self.df[col].dtype == 'object':
+                            matches = self.df[col].astype(str).str.contains(find_val, case=case_sensitive_var.get(), na=False).sum()
+                            count += matches
+                else:
+                    col = col_var.get()
+                    count = self.df[col].astype(str).str.contains(find_val, case=case_sensitive_var.get(), na=False).sum()
+                preview_text.insert(tk.END, f"Found '{find_val}' in {count} cell(s)\n")
+                preview_text.insert(tk.END, f"Will replace with '{replace_var.get()}'\n")
+            except Exception as e:
+                preview_text.insert(tk.END, f"Error: {str(e)}")
+            preview_text.config(state=tk.DISABLED)
+        def apply_replace():
+            find_val = find_var.get()
+            replace_val = replace_var.get()
+            if not find_val:
+                messagebox.showwarning("Warning", "Please enter a value to find!")
+                return
+            try:
+                count = 0
+                if scope_var.get() == "all":
+                    # Apply to all text columns
+                    for col in self.df.columns:
+                        if self.df[col].dtype == 'object':
+                            cleaned_df, num_replaced = self.cleaning_service.find_and_replace(
+                                self.df, col, find_val, replace_val, exact_match=not case_sensitive_var.get()
+                            )
+                            self.df = cleaned_df
+                            count += 1
+                else:
+                    # Apply to specific column
+                    col = col_var.get()
+                    cleaned_df, num_replaced = self.cleaning_service.find_and_replace(
+                        self.df, col, find_val, replace_val, exact_match=not case_sensitive_var.get()
+                    )
+                    self.df = cleaned_df
+                    count = 1
+                    
+                self.update_info_panel()
+                self.view_data()
+                self.update_status(f"Replaced '{find_val}' with '{replace_val}'")
+                messagebox.showinfo("Success", f"Replace complete!\nProcessed {count} column(s)")
+                dialog.destroy()
+            except Exception as e:
+                messagebox.showerror("Error", f"Replace failed:\n{str(e)}")
+        btn_frame = ttk.Frame(dialog)
+        btn_frame.pack(pady=10)
+        ttk.Button(btn_frame, text="Preview", command=show_preview).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Replace All", command=apply_replace, style='Action.TButton').pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+    
+    def standardize_text_case(self):
+        if self.df is None:
+            messagebox.showwarning("Warning", "No data loaded!")
+            return
+        text_cols = self.df.select_dtypes(include=['object']).columns.tolist()
+        if not text_cols:
+            messagebox.showinfo("Info", "No text columns found!")
+            return
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Standardize Text Case")
+        dialog.geometry("500x400")
+        ttk.Label(dialog, text="Standardize Text Case", font=('Arial', 12, 'bold')).pack(pady=15)
+        ttk.Label(dialog, text="Select column:", font=('Arial', 10, 'bold')).pack(pady=(10,5))
+        col_var = tk.StringVar()
+        col_dropdown = ttk.Combobox(dialog, textvariable=col_var, values=text_cols, state='readonly', width=25)
+        col_dropdown.pack(pady=5)
+        if text_cols:
+            col_dropdown.current(0)
+        ttk.Label(dialog, text="Convert to:", font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        case_var = tk.StringVar(value="title")
+        ttk.Radiobutton(dialog, text="Title Case (John Smith)", variable=case_var, value="title").pack(anchor='w', padx=50)
+        ttk.Radiobutton(dialog, text="UPPERCASE (JOHN SMITH)", variable=case_var, value="upper").pack(anchor='w', padx=50)
+        ttk.Radiobutton(dialog, text="lowercase (john smith)", variable=case_var, value="lower").pack(anchor='w', padx=50)
+        ttk.Radiobutton(dialog, text="Sentence case (John smith)", variable=case_var, value="sentence").pack(anchor='w', padx=50)
+        preview_text = scrolledtext.ScrolledText(dialog, height=6, width=50)
+        preview_text.pack(pady=10, padx=20)
+        preview_text.config(state=tk.DISABLED)
+        def show_preview():
+            col = col_var.get()
+            case = case_var.get()
+            preview_text.config(state=tk.NORMAL)
+            preview_text.delete(1.0, tk.END)
+            try:
+                sample = self.df[col].head(5)
+                preview_text.insert(tk.END, "Preview (first 5 values):\n\n")
+                for val in sample:
+                    if pd.notna(val):
+                        if case == "title":
+                            new_val = str(val).title()
+                        elif case == "upper":
+                            new_val = str(val).upper()
+                        elif case == "lower":
+                            new_val = str(val).lower()
+                        else:
+                            new_val = str(val).capitalize()
+                        preview_text.insert(tk.END, f"{val} → {new_val}\n")
+            except Exception as e:
+                preview_text.insert(tk.END, f"Error: {str(e)}")
+            preview_text.config(state=tk.DISABLED)
+        def apply_case():
+            col = col_var.get()
+            case = case_var.get()
+            try:
+                # Map UI case names to service case names
+                case_mapping = {
+                    "sentence": "capitalize"
+                }
+                service_case = case_mapping.get(case, case)
+                
+                # Use cleaning service
+                cleaned_df = self.cleaning_service.standardize_text_case(
+                    self.df, 
+                    [col], 
+                    service_case
+                )
+                self.df = cleaned_df
+                
+                self.update_info_panel()
+                self.view_data()
+                self.update_status(f"Standardized {col} to {case} case")
+                messagebox.showinfo("Success", f"Text case standardized for '{col}'!")
+                dialog.destroy()
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to standardize case: {str(e)}")
+        btn_frame = ttk.Frame(dialog)
+        btn_frame.pack(pady=10)
+        ttk.Button(btn_frame, text="Preview", command=show_preview).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Apply", command=apply_case, style='Action.TButton').pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+    
+    def remove_empty(self):
+        if self.df is None:
+            messagebox.showwarning("Warning", "No data loaded!")
+            return
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Remove Empty Rows/Columns")
+        dialog.geometry("450x350")
+        ttk.Label(dialog, text="Remove Empty Rows/Columns", font=('Arial', 12, 'bold')).pack(pady=15)
+        empty_rows = self.df.isnull().all(axis=1).sum()
+        empty_cols = self.df.isnull().all(axis=0).sum()
+        info_text = scrolledtext.ScrolledText(dialog, height=10, width=50)
+        info_text.pack(pady=10, padx=20)
+        info_text.insert(tk.END, f"Dataset Analysis:\n\n")
+        info_text.insert(tk.END, f"Total rows: {len(self.df)}\n")
+        info_text.insert(tk.END, f"Total columns: {len(self.df.columns)}\n\n")
+        info_text.insert(tk.END, f"Empty rows: {empty_rows}\n")
+        info_text.insert(tk.END, f"Empty columns: {empty_cols}\n")
+        info_text.config(state=tk.DISABLED)
+        remove_rows_var = tk.BooleanVar(value=True)
+        remove_cols_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(dialog, text=f"Remove {empty_rows} empty row(s)", variable=remove_rows_var).pack(pady=5)
+        ttk.Checkbutton(dialog, text=f"Remove {empty_cols} empty column(s)", variable=remove_cols_var).pack(pady=5)
+        def apply_remove():
+            try:
+                # Use cleaning service
+                cleaned_df, rows_removed, cols_removed = self.cleaning_service.remove_empty_rows_columns(
+                    self.df,
+                    remove_rows=remove_rows_var.get(),
+                    remove_cols=remove_cols_var.get()
+                )
+                self.df = cleaned_df
+                
+                self.update_info_panel()
+                self.view_data()
+                self.update_status(f"Removed {rows_removed} rows, {cols_removed} columns")
+                messagebox.showinfo("Success", f"Removed:\n{rows_removed} empty row(s)\n{cols_removed} empty column(s)")
+                dialog.destroy()
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to remove empty rows/columns: {str(e)}")
+        btn_frame = ttk.Frame(dialog)
+        btn_frame.pack(pady=15)
+        ttk.Button(btn_frame, text="Remove", command=apply_remove, style='Action.TButton').pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+    
+    def trim_all_columns(self):
+        if self.df is None:
+            messagebox.showwarning("Warning", "No data loaded!")
+            return
+        if messagebox.askyesno("Confirm", "Trim whitespace from all text columns?"):
+            try:
+                # Use cleaning service
+                text_cols = self.df.select_dtypes(include=['object']).columns
+                cleaned_df = self.cleaning_service.trim_all_columns(self.df)
+                self.df = cleaned_df
+                
+                self.update_info_panel()
+                self.view_data()
+                messagebox.showinfo("Success", f"Trimmed {len(text_cols)} columns!")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to trim columns: {str(e)}")
+    
+    def convert_data_types(self):
+        if self.df is None:
+            messagebox.showwarning("Warning", "No data loaded!")
+            return
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Convert Data Types")
+        dialog.geometry("500x450")
+        ttk.Label(dialog, text="Convert Data Types", font=('Arial', 12, 'bold')).pack(pady=15)
+        ttk.Label(dialog, text="Select column:", font=('Arial', 10, 'bold')).pack(pady=5)
+        col_var = tk.StringVar()
+        col_combo = ttk.Combobox(dialog, textvariable=col_var, values=list(self.df.columns), state='readonly', width=25)
+        col_combo.pack(pady=5)
+        if len(self.df.columns) > 0:
+            col_combo.current(0)
+        current_type_label = ttk.Label(dialog, text="", font=('Arial', 9))
+        current_type_label.pack(pady=5)
+        def update_type(*args):
+            if col_var.get():
+                current_type_label.config(text=f"Current type: {self.df[col_var.get()].dtype}")
+        col_var.trace('w', update_type)
+        ttk.Label(dialog, text="Convert to:", font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        type_var = tk.StringVar(value="number")
+        ttk.Radiobutton(dialog, text="Number (int/float)", variable=type_var, value="number").pack(anchor='w', padx=50)
+        ttk.Radiobutton(dialog, text="Text (string)", variable=type_var, value="text").pack(anchor='w', padx=50)
+        ttk.Radiobutton(dialog, text="Date/Time", variable=type_var, value="datetime").pack(anchor='w', padx=50)
+        ttk.Label(dialog, text="Handle errors:", font=('Arial', 9)).pack(pady=(10,5))
+        errors_var = tk.StringVar(value="coerce")
+        ttk.Radiobutton(dialog, text="Convert to NaN (recommended)", variable=errors_var, value="coerce").pack(anchor='w', padx=50)
+        ttk.Radiobutton(dialog, text="Keep original value", variable=errors_var, value="ignore").pack(anchor='w', padx=50)
+        preview_text = scrolledtext.ScrolledText(dialog, height=6, width=50)
+        preview_text.pack(pady=10, padx=20)
+        preview_text.config(state=tk.DISABLED)
+        def show_preview():
+            col = col_var.get()
+            target_type = type_var.get()
+            preview_text.config(state=tk.NORMAL)
+            preview_text.delete(1.0, tk.END)
+            try:
+                sample = self.df[col].head(5)
+                preview_text.insert(tk.END, "Preview (first 5 values):\n\n")
+                for val in sample:
+                    if pd.notna(val):
+                        try:
+                            if target_type == "number":
+                                new_val = pd.to_numeric(val, errors=errors_var.get())
+                            elif target_type == "text":
+                                new_val = str(val)
+                            else:
+                                new_val = pd.to_datetime(val, errors=errors_var.get())
+                            preview_text.insert(tk.END, f"{val} → {new_val}\n")
+                        except:
+                            preview_text.insert(tk.END, f"{val} → [conversion error]\n")
+            except Exception as e:
+                preview_text.insert(tk.END, f"Error: {str(e)}")
+            preview_text.config(state=tk.DISABLED)
+        def apply_conversion():
+            col = col_var.get()
+            target_type = type_var.get()
+            try:
+                # Map UI type names to service type names
+                type_mapping = {
+                    "number": "float",
+                    "text": "string",
+                    "datetime": "datetime"
+                }
+                service_type = type_mapping.get(target_type, target_type)
+                
+                # Use cleaning service
+                cleaned_df = self.cleaning_service.convert_data_types(
+                    self.df, 
+                    col, 
+                    service_type
+                )
+                self.df = cleaned_df
+                self.update_info_panel()
+                self.view_data()
+                self.update_status(f"Converted {col} to {target_type}")
+                messagebox.showinfo("Success", f"'{col}' converted to {target_type}!")
+                dialog.destroy()
+            except Exception as e:
+                messagebox.showerror("Error", f"Conversion failed:\n{str(e)}")
+        btn_frame = ttk.Frame(dialog)
+        btn_frame.pack(pady=10)
+        ttk.Button(btn_frame, text="Preview", command=show_preview).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Convert", command=apply_conversion, style='Action.TButton').pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+    
+    def standardize_dates(self):
+        if self.df is None:
+            messagebox.showwarning("Warning", "No data loaded!")
+            return
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Standardize Dates")
+        dialog.geometry("500x450")
+        ttk.Label(dialog, text="Standardize Date Format", font=('Arial', 12, 'bold')).pack(pady=15)
+        ttk.Label(dialog, text="Select date column:", font=('Arial', 10, 'bold')).pack(pady=5)
+        col_var = tk.StringVar()
+        col_combo = ttk.Combobox(dialog, textvariable=col_var, values=list(self.df.columns), state='readonly', width=25)
+        col_combo.pack(pady=5)
+        if len(self.df.columns) > 0:
+            col_combo.current(0)
+        ttk.Label(dialog, text="Target format:", font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        format_var = tk.StringVar(value="%Y-%m-%d")
+        ttk.Radiobutton(dialog, text="YYYY-MM-DD (2025-01-05)", variable=format_var, value="%Y-%m-%d").pack(anchor='w', padx=50)
+        ttk.Radiobutton(dialog, text="MM/DD/YYYY (01/05/2025)", variable=format_var, value="%m/%d/%Y").pack(anchor='w', padx=50)
+        ttk.Radiobutton(dialog, text="DD/MM/YYYY (05/01/2025)", variable=format_var, value="%d/%m/%Y").pack(anchor='w', padx=50)
+        ttk.Radiobutton(dialog, text="Month DD, YYYY (January 05, 2025)", variable=format_var, value="%B %d, %Y").pack(anchor='w', padx=50)
+        preview_text = scrolledtext.ScrolledText(dialog, height=8, width=55)
+        preview_text.pack(pady=10, padx=20)
+        preview_text.config(state=tk.DISABLED)
+        def show_preview():
+            col = col_var.get()
+            fmt = format_var.get()
+            preview_text.config(state=tk.NORMAL)
+            preview_text.delete(1.0, tk.END)
+            try:
+                sample = pd.to_datetime(self.df[col], errors='coerce').head(5)
+                preview_text.insert(tk.END, "Preview (first 5 values):\n\n")
+                for val in sample:
+                    if pd.notna(val):
+                        preview_text.insert(tk.END, f"{val} → {val.strftime(fmt)}\n")
+                    else:
+                        preview_text.insert(tk.END, "[invalid date]\n")
+            except Exception as e:
+                preview_text.insert(tk.END, f"Error: {str(e)}")
+            preview_text.config(state=tk.DISABLED)
+        def apply_format():
+            col = col_var.get()
+            fmt = format_var.get()
+            try:
+                # Use cleaning service
+                cleaned_df = self.cleaning_service.standardize_dates(
+                    self.df,
+                    col,
+                    date_format=fmt
+                )
+                self.df = cleaned_df
+                
+                self.update_info_panel()
+                self.view_data()
+                self.update_status(f"Standardized dates in {col}")
+                messagebox.showinfo("Success", f"Dates in '{col}' standardized to {fmt}!")
+                dialog.destroy()
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to standardize dates: {str(e)}")
+        btn_frame = ttk.Frame(dialog)
+        btn_frame.pack(pady=10)
+        ttk.Button(btn_frame, text="Preview", command=show_preview).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Apply", command=apply_format, style='Action.TButton').pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+    
+    def remove_special_chars(self):
+        if self.df is None:
+            messagebox.showwarning("Warning", "No data loaded!")
+            return
+        text_cols = self.df.select_dtypes(include=['object']).columns.tolist()
+        if not text_cols:
+            messagebox.showinfo("Info", "No text columns found!")
+            return
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Remove Special Characters")
+        dialog.geometry("500x450")
+        ttk.Label(dialog, text="Remove Special Characters", font=('Arial', 12, 'bold')).pack(pady=15)
+        ttk.Label(dialog, text="Select column:", font=('Arial', 10, 'bold')).pack(pady=5)
+        col_var = tk.StringVar()
+        col_combo = ttk.Combobox(dialog, textvariable=col_var, values=text_cols, state='readonly', width=25)
+        col_combo.pack(pady=5)
+        if text_cols:
+            col_combo.current(0)
+        ttk.Label(dialog, text="Remove:", font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        mode_var = tk.StringVar(value="all")
+        ttk.Radiobutton(dialog, text="All special characters (!@#$%^&*)", variable=mode_var, value="all").pack(anchor='w', padx=50)
+        ttk.Radiobutton(dialog, text="Punctuation only (.,!?;:)", variable=mode_var, value="punct").pack(anchor='w', padx=50)
+        ttk.Radiobutton(dialog, text="Custom characters", variable=mode_var, value="custom").pack(anchor='w', padx=50)
+        ttk.Label(dialog, text="Custom characters to remove:", font=('Arial', 9)).pack(pady=(10,5))
+        custom_var = tk.StringVar()
+        ttk.Entry(dialog, textvariable=custom_var, width=30).pack(pady=5)
+        preview_text = scrolledtext.ScrolledText(dialog, height=6, width=50)
+        preview_text.pack(pady=10, padx=20)
+        preview_text.config(state=tk.DISABLED)
+        def show_preview():
+            col = col_var.get()
+            mode = mode_var.get()
+            preview_text.config(state=tk.NORMAL)
+            preview_text.delete(1.0, tk.END)
+            try:
+                import re
+                sample = self.df[col].head(5)
+                preview_text.insert(tk.END, "Preview (first 5 values):\n\n")
+                for val in sample:
+                    if pd.notna(val):
+                        if mode == "all":
+                            new_val = re.sub(r'[^a-zA-Z0-9\s]', '', str(val))
+                        elif mode == "punct":
+                            new_val = re.sub(r'[.,!?;:]', '', str(val))
+                        else:
+                            chars = custom_var.get()
+                            new_val = str(val)
+                            for char in chars:
+                                new_val = new_val.replace(char, '')
+                        preview_text.insert(tk.END, f"{val} → {new_val}\n")
+            except Exception as e:
+                preview_text.insert(tk.END, f"Error: {str(e)}")
+            preview_text.config(state=tk.DISABLED)
+        def apply_remove():
+            col = col_var.get()
+            mode = mode_var.get()
+            try:
+                # Determine keep_alphanumeric based on mode
+                if mode == "all":
+                    keep_alphanumeric = True
+                    custom_chars = None
+                elif mode == "punct":
+                    keep_alphanumeric = False
+                    custom_chars = ".,!?;:"
+                else:
+                    keep_alphanumeric = False
+                    custom_chars = custom_var.get()
+                
+                # Use cleaning service
+                cleaned_df = self.cleaning_service.remove_special_characters(
+                    self.df,
+                    col,
+                    keep_alphanumeric=keep_alphanumeric,
+                    custom_chars=custom_chars
+                )
+                self.df = cleaned_df
+                
+                self.update_info_panel()
+                self.view_data()
+                self.update_status(f"Removed special characters from {col}")
+                messagebox.showinfo("Success", f"Special characters removed from '{col}'!")
+                dialog.destroy()
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to remove special characters: {str(e)}")
+        btn_frame = ttk.Frame(dialog)
+        btn_frame.pack(pady=10)
+        ttk.Button(btn_frame, text="Preview", command=show_preview).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Apply", command=apply_remove, style='Action.TButton').pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+    
+    def split_merge_columns(self):
+        if self.df is None:
+            messagebox.showwarning("Warning", "No data loaded!")
+            return
+        choice_dialog = tk.Toplevel(self.root)
+        choice_dialog.title("Split/Merge Columns")
+        choice_dialog.geometry("400x250")
+        ttk.Label(choice_dialog, text="Split or Merge Columns", font=('Arial', 12, 'bold')).pack(pady=20)
+        ttk.Label(choice_dialog, text="What would you like to do?", font=('Arial', 10)).pack(pady=10)
+        def open_split():
+            choice_dialog.destroy()
+            self._split_column_dialog()
+        def open_merge():
+            choice_dialog.destroy()
+            self._merge_columns_dialog()
+        btn_frame = ttk.Frame(choice_dialog)
+        btn_frame.pack(pady=20)
+        ttk.Button(btn_frame, text="Split Column", command=open_split, style='Action.TButton', width=15).pack(pady=5)
+        ttk.Button(btn_frame, text="Merge Columns", command=open_merge, style='Action.TButton', width=15).pack(pady=5)
+        ttk.Button(btn_frame, text="Cancel", command=choice_dialog.destroy, width=15).pack(pady=5)
+    
+    def _split_column_dialog(self):
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Split Column")
+        dialog.geometry("500x400")
+        ttk.Label(dialog, text="Split Column by Delimiter", font=('Arial', 12, 'bold')).pack(pady=15)
+        ttk.Label(dialog, text="Select column to split:", font=('Arial', 10, 'bold')).pack(pady=5)
+        col_var = tk.StringVar()
+        col_combo = ttk.Combobox(dialog, textvariable=col_var, values=list(self.df.columns), state='readonly', width=25)
+        col_combo.pack(pady=5)
+        if len(self.df.columns) > 0:
+            col_combo.current(0)
+        ttk.Label(dialog, text="Delimiter:", font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        delimiter_var = tk.StringVar(value=" ")
+        delimiter_frame = ttk.Frame(dialog)
+        delimiter_frame.pack(pady=5)
+        ttk.Radiobutton(delimiter_frame, text="Space", variable=delimiter_var, value=" ").pack(side=tk.LEFT, padx=5)
+        ttk.Radiobutton(delimiter_frame, text="Comma", variable=delimiter_var, value=",").pack(side=tk.LEFT, padx=5)
+        ttk.Radiobutton(delimiter_frame, text="Hyphen", variable=delimiter_var, value="-").pack(side=tk.LEFT, padx=5)
+        ttk.Label(dialog, text="Custom:", font=('Arial', 9)).pack(pady=5)
+        custom_delim = tk.StringVar()
+        ttk.Entry(dialog, textvariable=custom_delim, width=10).pack(pady=5)
+        preview_text = scrolledtext.ScrolledText(dialog, height=6, width=50)
+        preview_text.pack(pady=10, padx=20)
+        preview_text.config(state=tk.DISABLED)
+        def show_preview():
+            col = col_var.get()
+            delim = custom_delim.get() if custom_delim.get() else delimiter_var.get()
+            preview_text.config(state=tk.NORMAL)
+            preview_text.delete(1.0, tk.END)
+            try:
+                sample = self.df[col].head(3)
+                preview_text.insert(tk.END, f"Preview (delimiter: '{delim}'):\n\n")
+                for val in sample:
+                    if pd.notna(val):
+                        parts = str(val).split(delim)
+                        preview_text.insert(tk.END, f"{val} → {len(parts)} parts: {parts}\n")
+            except Exception as e:
+                preview_text.insert(tk.END, f"Error: {str(e)}")
+            preview_text.config(state=tk.DISABLED)
+        def apply_split():
+            col = col_var.get()
+            delim = custom_delim.get() if custom_delim.get() else delimiter_var.get()
+            try:
+                # Use cleaning service
+                cleaned_df, num_cols = self.cleaning_service.split_column(
+                    self.df,
+                    col,
+                    delimiter=delim
+                )
+                self.df = cleaned_df
+                
+                self.update_info_panel()
+                self.view_data()
+                self.update_status(f"Split {col} into {num_cols} columns")
+                messagebox.showinfo("Success", f"Split '{col}' into {num_cols} columns!")
+                dialog.destroy()
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to split column:\n{str(e)}")
+        btn_frame = ttk.Frame(dialog)
+        btn_frame.pack(pady=10)
+        ttk.Button(btn_frame, text="Preview", command=show_preview).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Split", command=apply_split, style='Action.TButton').pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+    
+    def _merge_columns_dialog(self):
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Merge Columns")
+        dialog.geometry("500x400")
+        ttk.Label(dialog, text="Merge Multiple Columns", font=('Arial', 12, 'bold')).pack(pady=15)
+        ttk.Label(dialog, text="Select first column:", font=('Arial', 10, 'bold')).pack(pady=5)
+        col1_var = tk.StringVar()
+        col1_combo = ttk.Combobox(dialog, textvariable=col1_var, values=list(self.df.columns), state='readonly', width=25)
+        col1_combo.pack(pady=5)
+        if len(self.df.columns) > 0:
+            col1_combo.current(0)
+        ttk.Label(dialog, text="Select second column:", font=('Arial', 10, 'bold')).pack(pady=5)
+        col2_var = tk.StringVar()
+        col2_combo = ttk.Combobox(dialog, textvariable=col2_var, values=list(self.df.columns), state='readonly', width=25)
+        col2_combo.pack(pady=5)
+        if len(self.df.columns) > 1:
+            col2_combo.current(1)
+        ttk.Label(dialog, text="Separator:", font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        sep_var = tk.StringVar(value=" ")
+        sep_frame = ttk.Frame(dialog)
+        sep_frame.pack(pady=5)
+        ttk.Radiobutton(sep_frame, text="Space", variable=sep_var, value=" ").pack(side=tk.LEFT, padx=5)
+        ttk.Radiobutton(sep_frame, text="Comma", variable=sep_var, value=",").pack(side=tk.LEFT, padx=5)
+        ttk.Radiobutton(sep_frame, text="None", variable=sep_var, value="").pack(side=tk.LEFT, padx=5)
+        ttk.Label(dialog, text="New column name:", font=('Arial', 9)).pack(pady=5)
+        new_name_var = tk.StringVar()
+        ttk.Entry(dialog, textvariable=new_name_var, width=30).pack(pady=5)
+        preview_text = scrolledtext.ScrolledText(dialog, height=6, width=50)
+        preview_text.pack(pady=10, padx=20)
+        preview_text.config(state=tk.DISABLED)
+        def show_preview():
+            col1 = col1_var.get()
+            col2 = col2_var.get()
+            sep = sep_var.get()
+            preview_text.config(state=tk.NORMAL)
+            preview_text.delete(1.0, tk.END)
+            try:
+                preview_text.insert(tk.END, f"Preview (separator: '{sep}'):\n\n")
+                for i in range(min(3, len(self.df))):
+                    val1 = str(self.df[col1].iloc[i])
+                    val2 = str(self.df[col2].iloc[i])
+                    merged = val1 + sep + val2
+                    preview_text.insert(tk.END, f"{val1} + {val2} → {merged}\n")
+            except Exception as e:
+                preview_text.insert(tk.END, f"Error: {str(e)}")
+            preview_text.config(state=tk.DISABLED)
+        def apply_merge():
+            col1 = col1_var.get()
+            col2 = col2_var.get()
+            sep = sep_var.get()
+            new_name = new_name_var.get() if new_name_var.get() else f"{col1}_{col2}"
+            try:
+                # Use cleaning service
+                cleaned_df = self.cleaning_service.merge_columns(
+                    self.df,
+                    [col1, col2],
+                    separator=sep,
+                    new_column_name=new_name
+                )
+                self.df = cleaned_df
+                
+                self.update_info_panel()
+                self.view_data()
+                self.update_status(f"Merged {col1} and {col2}")
+                messagebox.showinfo("Success", f"Merged '{col1}' and '{col2}' into '{new_name}'!")
+                dialog.destroy()
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to merge columns:\n{str(e)}")
+        btn_frame = ttk.Frame(dialog)
+        btn_frame.pack(pady=10)
+        ttk.Button(btn_frame, text="Preview", command=show_preview).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Merge", command=apply_merge, style='Action.TButton').pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
     
     def plot_histogram(self):
+        """Create histogram with advanced options"""
         if self.df is None:
             messagebox.showwarning("Warning", "No data loaded!")
             return
@@ -616,27 +2628,147 @@ class DataAnalystApp:
             return
         
         dialog = tk.Toplevel(self.root)
-        dialog.title("Select Column for Histogram")
-        ttk.Label(dialog, text="Select column:").pack(pady=10)
+        dialog.title("Create Histogram")
+        dialog.geometry("500x480")
         
+        ttk.Label(dialog, text="Create Histogram - Advanced", 
+                 font=('Arial', 12, 'bold')).pack(pady=10)
+        
+        # Column selection
+        ttk.Label(dialog, text="Select column:", font=('Arial', 10, 'bold')).pack(pady=(10,5))
         col_var = tk.StringVar(value=numeric_cols[0])
-        combo = ttk.Combobox(dialog, textvariable=col_var, values=numeric_cols, state='readonly')
-        combo.pack(pady=5)
+        ttk.Combobox(dialog, textvariable=col_var, values=numeric_cols, 
+                    state='readonly', width=35).pack(pady=5)
+        
+        # Bin configuration
+        ttk.Label(dialog, text="Bin configuration:", font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        
+        bin_frame = ttk.Frame(dialog)
+        bin_frame.pack(pady=5)
+        
+        bin_method_var = tk.StringVar(value="manual")
+        ttk.Radiobutton(bin_frame, text="Manual:", variable=bin_method_var, 
+                       value="manual").grid(row=0, column=0, sticky='w', padx=10)
+        
+        bin_count_var = tk.IntVar(value=30)
+        ttk.Spinbox(bin_frame, from_=5, to=100, textvariable=bin_count_var, 
+                   width=10).grid(row=0, column=1, padx=5)
+        ttk.Label(bin_frame, text="bins").grid(row=0, column=2, sticky='w')
+        
+        ttk.Radiobutton(bin_frame, text="Auto (let matplotlib decide)", 
+                       variable=bin_method_var, value="auto").grid(row=1, column=0, columnspan=3, 
+                                                                    sticky='w', padx=10, pady=5)
+        ttk.Radiobutton(bin_frame, text="Sturges' formula (good for normal data)", 
+                       variable=bin_method_var, value="sturges").grid(row=2, column=0, columnspan=3, 
+                                                                       sticky='w', padx=10, pady=2)
+        ttk.Radiobutton(bin_frame, text="Scott's rule (minimizes variance)", 
+                       variable=bin_method_var, value="scott").grid(row=3, column=0, columnspan=3, 
+                                                                     sticky='w', padx=10, pady=2)
+        
+        # Color selection
+        ttk.Label(dialog, text="Bar color:", font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        
+        color_var = tk.StringVar(value="steelblue")
+        color_frame = ttk.Frame(dialog)
+        color_frame.pack(pady=5)
+        
+        colors = [("Blue", "steelblue"), ("Green", "green"), ("Red", "crimson"),
+                  ("Purple", "purple"), ("Orange", "orange"), ("Gray", "gray")]
+        
+        for i, (name, color) in enumerate(colors):
+            ttk.Radiobutton(color_frame, text=name, variable=color_var, 
+                           value=color).grid(row=i//3, column=i%3, padx=10, pady=2)
+        
+        # Display options
+        ttk.Label(dialog, text="Display options:", font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        
+        show_stats_var = tk.BooleanVar(value=False)
+        show_normal_var = tk.BooleanVar(value=False)
+        show_kde_var = tk.BooleanVar(value=False)
+        
+        opt_frame = ttk.Frame(dialog)
+        opt_frame.pack(pady=5)
+        
+        ttk.Checkbutton(opt_frame, text="Show statistics (mean, median)", 
+                       variable=show_stats_var).pack(anchor='w', padx=50)
+        ttk.Checkbutton(opt_frame, text="Overlay normal distribution curve", 
+                       variable=show_normal_var).pack(anchor='w', padx=50)
+        ttk.Checkbutton(opt_frame, text="Show KDE (Kernel Density Estimate)", 
+                       variable=show_kde_var).pack(anchor='w', padx=50)
+        
+        # Title
+        ttk.Label(dialog, text="Chart title (optional):", font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        title_var = tk.StringVar(value="")
+        ttk.Entry(dialog, textvariable=title_var, width=40).pack(pady=5)
         
         def plot():
             col = col_var.get()
-            def plot_func(fig, ax):
-                ax.hist(self.df[col].dropna(), bins=30, edgecolor='black', alpha=0.7)
-                ax.set_title(f'Distribution of {col}', fontsize=14, fontweight='bold')
-                ax.set_xlabel(col)
-                ax.set_ylabel('Frequency')
-                ax.grid(True, alpha=0.3)
-            self.create_plot(plot_func)
-            dialog.destroy()
+            
+            try:
+                # Get bin configuration
+                bin_method = bin_method_var.get()
+                if bin_method == "manual":
+                    bins = bin_count_var.get()
+                else:
+                    bins = bin_method
+                
+                data = self.df[col].dropna()
+                color = color_var.get()
+                chart_title = title_var.get() if title_var.get() else f'Distribution of {col}'
+                
+                def plot_func(fig, ax):
+                    # Create histogram
+                    n, bins_arr, patches = ax.hist(data, bins=bins, 
+                                                   color=color, edgecolor='black', 
+                                                   alpha=0.7, density=show_kde_var.get() or show_normal_var.get())
+                    
+                    # Show statistics
+                    if show_stats_var.get():
+                        mean_val = data.mean()
+                        median_val = data.median()
+                        ax.axvline(mean_val, color='red', linestyle='--', linewidth=2, label=f'Mean: {mean_val:.2f}')
+                        ax.axvline(median_val, color='green', linestyle='--', linewidth=2, label=f'Median: {median_val:.2f}')
+                    
+                    # Overlay normal distribution
+                    if show_normal_var.get():
+                        from scipy import stats
+                        mu, sigma = data.mean(), data.std()
+                        x = np.linspace(data.min(), data.max(), 100)
+                        ax.plot(x, stats.norm.pdf(x, mu, sigma), 'r-', linewidth=2, 
+                               label=f'Normal (μ={mu:.1f}, σ={sigma:.1f})')
+                    
+                    # Show KDE
+                    if show_kde_var.get():
+                        from scipy.stats import gaussian_kde
+                        kde = gaussian_kde(data)
+                        x_range = np.linspace(data.min(), data.max(), 200)
+                        ax.plot(x_range, kde(x_range), 'b-', linewidth=2, label='KDE')
+                    
+                    ax.set_title(chart_title, fontsize=14, fontweight='bold')
+                    ax.set_xlabel(col, fontsize=11)
+                    ax.set_ylabel('Density' if (show_kde_var.get() or show_normal_var.get()) else 'Frequency', 
+                                 fontsize=11)
+                    ax.grid(True, alpha=0.3)
+                    
+                    if show_stats_var.get() or show_normal_var.get() or show_kde_var.get():
+                        ax.legend()
+                
+                self.create_plot(plot_func)
+                dialog.destroy()
+                
+            except Exception as e:
+                messagebox.showerror("Error", f"Histogram creation failed:\n{str(e)}")
         
-        ttk.Button(dialog, text="Plot", command=plot).pack(pady=10)
+        # Action buttons
+        button_frame = ttk.Frame(dialog)
+        button_frame.pack(pady=20)
+        
+        ttk.Button(button_frame, text="Create Histogram", command=plot, 
+                  style='Action.TButton').pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
     
     def plot_boxplot(self):
+        """Create box plot with advanced options"""
         if self.df is None:
             messagebox.showwarning("Warning", "No data loaded!")
             return
@@ -646,17 +2778,162 @@ class DataAnalystApp:
             messagebox.showwarning("Warning", "No numeric columns!")
             return
         
-        def plot_func(fig, ax):
-            data_to_plot = [self.df[col].dropna() for col in numeric_cols]
-            ax.boxplot(data_to_plot, labels=numeric_cols)
-            ax.set_title('Box Plot - Distribution Comparison', fontsize=14, fontweight='bold')
-            ax.set_ylabel('Values')
-            ax.grid(True, alpha=0.3, axis='y')
-            plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Create Box Plot")
+        dialog.geometry("500x500")
         
-        self.create_plot(plot_func)
+        ttk.Label(dialog, text="Create Box Plot - Advanced", 
+                 font=('Arial', 12, 'bold')).pack(pady=10)
+        
+        # Column selection
+        ttk.Label(dialog, text="Select columns to plot:", 
+                 font=('Arial', 10, 'bold')).pack(pady=(10,5))
+        
+        # Listbox for multi-column selection
+        list_frame = ttk.Frame(dialog)
+        list_frame.pack(pady=5, fill=tk.BOTH, expand=True, padx=20)
+        
+        scrollbar = ttk.Scrollbar(list_frame)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        col_listbox = tk.Listbox(list_frame, selectmode=tk.MULTIPLE, 
+                                yscrollcommand=scrollbar.set, height=6)
+        col_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.config(command=col_listbox.yview)
+        
+        for col in numeric_cols:
+            col_listbox.insert(tk.END, col)
+        
+        # Select all by default
+        col_listbox.select_set(0, tk.END)
+        
+        # Quick select buttons
+        btn_frame = ttk.Frame(dialog)
+        btn_frame.pack(pady=5)
+        
+        def select_all():
+            col_listbox.select_set(0, tk.END)
+        
+        def clear_all():
+            col_listbox.selection_clear(0, tk.END)
+        
+        ttk.Button(btn_frame, text="Select All", command=select_all).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Clear All", command=clear_all).pack(side=tk.LEFT, padx=5)
+        
+        # Orientation
+        ttk.Label(dialog, text="Orientation:", font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        
+        orientation_var = tk.StringVar(value="vertical")
+        orient_frame = ttk.Frame(dialog)
+        orient_frame.pack(pady=5)
+        
+        ttk.Radiobutton(orient_frame, text="Vertical", 
+                       variable=orientation_var, value="vertical").pack(side=tk.LEFT, padx=20)
+        ttk.Radiobutton(orient_frame, text="Horizontal", 
+                       variable=orientation_var, value="horizontal").pack(side=tk.LEFT, padx=20)
+        
+        # Display options
+        ttk.Label(dialog, text="Display options:", font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        
+        show_means_var = tk.BooleanVar(value=False)
+        show_outliers_var = tk.BooleanVar(value=True)
+        show_notch_var = tk.BooleanVar(value=False)
+        
+        opt_frame = ttk.Frame(dialog)
+        opt_frame.pack(pady=5)
+        
+        ttk.Checkbutton(opt_frame, text="Show means", 
+                       variable=show_means_var).pack(anchor='w', padx=50)
+        ttk.Checkbutton(opt_frame, text="Show outliers", 
+                       variable=show_outliers_var).pack(anchor='w', padx=50)
+        ttk.Checkbutton(opt_frame, text="Show notch (confidence interval)", 
+                       variable=show_notch_var).pack(anchor='w', padx=50)
+        
+        # Color
+        ttk.Label(dialog, text="Box color:", font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        
+        color_var = tk.StringVar(value="lightblue")
+        color_frame = ttk.Frame(dialog)
+        color_frame.pack(pady=5)
+        
+        colors = [("Light Blue", "lightblue"), ("Light Green", "lightgreen"), 
+                  ("Light Coral", "lightcoral"), ("Light Gray", "lightgray")]
+        
+        for i, (name, color) in enumerate(colors):
+            ttk.Radiobutton(color_frame, text=name, variable=color_var, 
+                           value=color).grid(row=0, column=i, padx=10)
+        
+        # Title
+        ttk.Label(dialog, text="Chart title (optional):", font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        title_var = tk.StringVar(value="")
+        ttk.Entry(dialog, textvariable=title_var, width=40).pack(pady=5)
+        
+        def plot():
+            selected_indices = col_listbox.curselection()
+            if not selected_indices:
+                messagebox.showwarning("Warning", "Please select at least one column!")
+                return
+            
+            selected_cols = [col_listbox.get(i) for i in selected_indices]
+            
+            try:
+                orientation = orientation_var.get()
+                vert = (orientation == "vertical")
+                chart_title = title_var.get() if title_var.get() else 'Box Plot - Distribution Comparison'
+                color = color_var.get()
+                
+                def plot_func(fig, ax):
+                    data_to_plot = [self.df[col].dropna() for col in selected_cols]
+                    
+                    bp = ax.boxplot(data_to_plot, labels=selected_cols, 
+                                   vert=vert, patch_artist=True,
+                                   showmeans=show_means_var.get(),
+                                   showfliers=show_outliers_var.get(),
+                                   notch=show_notch_var.get())
+                    
+                    # Color the boxes
+                    for patch in bp['boxes']:
+                        patch.set_facecolor(color)
+                        patch.set_alpha(0.7)
+                    
+                    # Style medians
+                    for median in bp['medians']:
+                        median.set_color('red')
+                        median.set_linewidth(2)
+                    
+                    # Style means if shown
+                    if show_means_var.get():
+                        for mean in bp['means']:
+                            mean.set_marker('D')
+                            mean.set_markerfacecolor('green')
+                            mean.set_markersize(6)
+                    
+                    ax.set_title(chart_title, fontsize=14, fontweight='bold')
+                    
+                    if vert:
+                        ax.set_ylabel('Values', fontsize=11)
+                        ax.grid(True, alpha=0.3, axis='y')
+                        plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
+                    else:
+                        ax.set_xlabel('Values', fontsize=11)
+                        ax.grid(True, alpha=0.3, axis='x')
+                
+                self.create_plot(plot_func)
+                dialog.destroy()
+                
+            except Exception as e:
+                messagebox.showerror("Error", f"Box plot creation failed:\n{str(e)}")
+        
+        # Action buttons
+        button_frame = ttk.Frame(dialog)
+        button_frame.pack(pady=20)
+        
+        ttk.Button(button_frame, text="Create Plot", command=plot, 
+                  style='Action.TButton').pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
     
     def plot_scatter(self):
+        """Create scatter plot with advanced options"""
         if self.df is None:
             messagebox.showwarning("Warning", "No data loaded!")
             return
@@ -667,28 +2944,140 @@ class DataAnalystApp:
             return
         
         dialog = tk.Toplevel(self.root)
-        dialog.title("Select Columns for Scatter Plot")
-        ttk.Label(dialog, text="X axis:").pack(pady=5)
-        x_var = tk.StringVar(value=numeric_cols[0])
-        ttk.Combobox(dialog, textvariable=x_var, values=numeric_cols, state='readonly').pack()
+        dialog.title("Create Scatter Plot")
+        dialog.geometry("520x550")
         
-        ttk.Label(dialog, text="Y axis:").pack(pady=5)
+        ttk.Label(dialog, text="Create Scatter Plot - Advanced", 
+                 font=('Arial', 12, 'bold')).pack(pady=10)
+        
+        # X and Y axis selection
+        axis_frame = ttk.Frame(dialog)
+        axis_frame.pack(pady=10, padx=20, fill=tk.X)
+        
+        ttk.Label(axis_frame, text="X axis:", font=('Arial', 10, 'bold')).grid(row=0, column=0, sticky='w', pady=5)
+        x_var = tk.StringVar(value=numeric_cols[0])
+        ttk.Combobox(axis_frame, textvariable=x_var, values=numeric_cols, 
+                    state='readonly', width=30).grid(row=0, column=1, padx=10)
+        
+        ttk.Label(axis_frame, text="Y axis:", font=('Arial', 10, 'bold')).grid(row=1, column=0, sticky='w', pady=5)
         y_var = tk.StringVar(value=numeric_cols[1] if len(numeric_cols) > 1 else numeric_cols[0])
-        ttk.Combobox(dialog, textvariable=y_var, values=numeric_cols, state='readonly').pack()
+        ttk.Combobox(axis_frame, textvariable=y_var, values=numeric_cols, 
+                    state='readonly', width=30).grid(row=1, column=1, padx=10)
+        
+        # Color by category
+        ttk.Label(dialog, text="Color by category (optional):", 
+                 font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        color_by_var = tk.StringVar(value="None")
+        ttk.Combobox(dialog, textvariable=color_by_var, 
+                    values=["None"] + list(self.df.columns), 
+                    state='readonly', width=35).pack(pady=5)
+        
+        # Marker customization
+        ttk.Label(dialog, text="Marker style:", font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        
+        marker_frame = ttk.Frame(dialog)
+        marker_frame.pack(pady=5)
+        
+        marker_var = tk.StringVar(value="o")
+        markers = [("Circle", "o"), ("Square", "s"), ("Triangle", "^"), 
+                   ("Diamond", "D"), ("Star", "*"), ("Plus", "+")]
+        
+        for i, (name, marker) in enumerate(markers):
+            ttk.Radiobutton(marker_frame, text=name, variable=marker_var, 
+                           value=marker).grid(row=i//3, column=i%3, padx=15, pady=2)
+        
+        # Size and transparency
+        size_frame = ttk.Frame(dialog)
+        size_frame.pack(pady=10)
+        
+        ttk.Label(size_frame, text="Marker size:", font=('Arial', 9)).grid(row=0, column=0, padx=5)
+        size_var = tk.IntVar(value=50)
+        ttk.Spinbox(size_frame, from_=10, to=200, textvariable=size_var, width=10).grid(row=0, column=1, padx=5)
+        
+        ttk.Label(size_frame, text="Transparency:", font=('Arial', 9)).grid(row=0, column=2, padx=5)
+        alpha_var = tk.DoubleVar(value=0.6)
+        ttk.Spinbox(size_frame, from_=0.1, to=1.0, increment=0.1, textvariable=alpha_var, width=10).grid(row=0, column=3, padx=5)
+        
+        # Display options
+        ttk.Label(dialog, text="Display options:", font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        
+        show_trend_var = tk.BooleanVar(value=False)
+        show_correlation_var = tk.BooleanVar(value=False)
+        
+        opt_frame = ttk.Frame(dialog)
+        opt_frame.pack(pady=5)
+        
+        ttk.Checkbutton(opt_frame, text="Show trend line", 
+                       variable=show_trend_var).pack(anchor='w', padx=50)
+        ttk.Checkbutton(opt_frame, text="Show correlation coefficient", 
+                       variable=show_correlation_var).pack(anchor='w', padx=50)
+        
+        # Title
+        ttk.Label(dialog, text="Chart title (optional):", font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        title_var = tk.StringVar(value="")
+        ttk.Entry(dialog, textvariable=title_var, width=40).pack(pady=5)
         
         def plot():
             x_col = x_var.get()
             y_col = y_var.get()
-            def plot_func(fig, ax):
-                ax.scatter(self.df[x_col], self.df[y_col], alpha=0.6, s=50)
-                ax.set_title(f'{y_col} vs {x_col}', fontsize=14, fontweight='bold')
-                ax.set_xlabel(x_col)
-                ax.set_ylabel(y_col)
-                ax.grid(True, alpha=0.3)
-            self.create_plot(plot_func)
-            dialog.destroy()
+            color_by = color_by_var.get()
+            
+            try:
+                chart_title = title_var.get() if title_var.get() else f'{y_col} vs {x_col}'
+                marker = marker_var.get()
+                size = size_var.get()
+                alpha = alpha_var.get()
+                
+                def plot_func(fig, ax):
+                    # Prepare data
+                    if color_by != "None":
+                        # Color by category
+                        categories = self.df[color_by].unique()
+                        for cat in categories:
+                            mask = self.df[color_by] == cat
+                            ax.scatter(self.df[mask][x_col], self.df[mask][y_col], 
+                                      label=cat, alpha=alpha, s=size, marker=marker)
+                        ax.legend()
+                    else:
+                        # Single color
+                        ax.scatter(self.df[x_col], self.df[y_col], 
+                                  alpha=alpha, s=size, marker=marker, color='steelblue')
+                    
+                    # Trend line
+                    if show_trend_var.get():
+                        x_data = self.df[x_col].dropna()
+                        y_data = self.df[y_col].dropna()
+                        z = np.polyfit(x_data, y_data, 1)
+                        p = np.poly1d(z)
+                        ax.plot(x_data, p(x_data), "r--", linewidth=2, label=f'Trend: y={z[0]:.2f}x+{z[1]:.2f}')
+                        ax.legend()
+                    
+                    # Correlation coefficient
+                    if show_correlation_var.get():
+                        corr = self.df[[x_col, y_col]].corr().iloc[0, 1]
+                        ax.text(0.05, 0.95, f'Correlation: {corr:.3f}', 
+                               transform=ax.transAxes, fontsize=10, 
+                               verticalalignment='top', 
+                               bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+                    
+                    ax.set_title(chart_title, fontsize=14, fontweight='bold')
+                    ax.set_xlabel(x_col, fontsize=11)
+                    ax.set_ylabel(y_col, fontsize=11)
+                    ax.grid(True, alpha=0.3)
+                
+                self.create_plot(plot_func)
+                dialog.destroy()
+                
+            except Exception as e:
+                messagebox.showerror("Error", f"Scatter plot creation failed:\n{str(e)}")
         
-        ttk.Button(dialog, text="Plot", command=plot).pack(pady=10)
+        # Action buttons
+        button_frame = ttk.Frame(dialog)
+        button_frame.pack(pady=20)
+        
+        ttk.Button(button_frame, text="Create Plot", command=plot, 
+                  style='Action.TButton').pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
     
     def plot_heatmap(self):
         if self.df is None:
@@ -737,35 +3126,265 @@ class DataAnalystApp:
         self.update_status("✓ Plot created successfully")
     
     def plot_pie(self):
-        """Create pie chart"""
+        """Create pie chart with advanced options"""
         if self.df is None:
             messagebox.showwarning("Warning", "No data loaded!")
             return
         
-        # Get categorical columns
-        cat_cols = self.df.select_dtypes(include=['object']).columns.tolist()
-        if not cat_cols:
-            messagebox.showwarning("Warning", "No categorical columns for pie chart!")
-            return
-        
         dialog = tk.Toplevel(self.root)
         dialog.title("Create Pie Chart")
-        dialog.geometry("350x150")
+        dialog.geometry("500x500")
         
-        ttk.Label(dialog, text="Select column:", font=('Arial', 11)).pack(pady=10)
-        col_var = tk.StringVar(value=cat_cols[0])
-        ttk.Combobox(dialog, textvariable=col_var, values=cat_cols, state='readonly', width=30).pack(pady=5)
+        ttk.Label(dialog, text="Create Pie Chart - Advanced", 
+                 font=('Arial', 12, 'bold')).pack(pady=10)
+        
+        # Column selection (all columns now allowed)
+        ttk.Label(dialog, text="Select column:", font=('Arial', 10, 'bold')).pack(pady=(10,5))
+        col_var = tk.StringVar(value=self.df.columns[0])
+        ttk.Combobox(dialog, textvariable=col_var, values=list(self.df.columns), 
+                    state='readonly', width=35).pack(pady=5)
+        
+        # Number of slices
+        ttk.Label(dialog, text="Number of slices to show:", 
+                 font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        
+        slice_frame = ttk.Frame(dialog)
+        slice_frame.pack(pady=5)
+        
+        ttk.Label(slice_frame, text="Top").pack(side=tk.LEFT, padx=5)
+        slice_var = tk.IntVar(value=10)
+        ttk.Spinbox(slice_frame, from_=3, to=20, textvariable=slice_var, width=10).pack(side=tk.LEFT)
+        ttk.Label(slice_frame, text="categories (others grouped as 'Other')").pack(side=tk.LEFT, padx=5)
+        
+        # Chart title
+        ttk.Label(dialog, text="Chart title (optional):", 
+                 font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        title_var = tk.StringVar(value="")
+        ttk.Entry(dialog, textvariable=title_var, width=40).pack(pady=5)
+        
+        # Color scheme
+        ttk.Label(dialog, text="Color scheme:", font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        
+        color_var = tk.StringVar(value="default")
+        color_frame = ttk.Frame(dialog)
+        color_frame.pack(pady=5)
+        
+        ttk.Radiobutton(color_frame, text="Default", 
+                       variable=color_var, value="default").grid(row=0, column=0, padx=10)
+        ttk.Radiobutton(color_frame, text="Pastel", 
+                       variable=color_var, value="pastel").grid(row=0, column=1, padx=10)
+        ttk.Radiobutton(color_frame, text="Bold", 
+                       variable=color_var, value="bold").grid(row=0, column=2, padx=10)
+        ttk.Radiobutton(color_frame, text="Blues", 
+                       variable=color_var, value="blues").grid(row=1, column=0, padx=10)
+        ttk.Radiobutton(color_frame, text="Greens", 
+                       variable=color_var, value="greens").grid(row=1, column=1, padx=10)
+        ttk.Radiobutton(color_frame, text="Reds", 
+                       variable=color_var, value="reds").grid(row=1, column=2, padx=10)
+        
+        # Display options
+        ttk.Label(dialog, text="Display options:", font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        
+        show_percent_var = tk.BooleanVar(value=True)
+        show_values_var = tk.BooleanVar(value=False)
+        explode_largest_var = tk.BooleanVar(value=False)
+        
+        opt_frame = ttk.Frame(dialog)
+        opt_frame.pack(pady=5)
+        
+        ttk.Checkbutton(opt_frame, text="Show percentages", 
+                       variable=show_percent_var).pack(anchor='w', padx=50)
+        ttk.Checkbutton(opt_frame, text="Show actual values", 
+                       variable=show_values_var).pack(anchor='w', padx=50)
+        ttk.Checkbutton(opt_frame, text="Explode largest slice", 
+                       variable=explode_largest_var).pack(anchor='w', padx=50)
         
         def plot():
             col = col_var.get()
-            value_counts = self.df[col].value_counts().head(10)
+            n_slices = slice_var.get()
             
-            def plot_func(fig, ax):
-                ax.pie(value_counts.values, labels=value_counts.index, autopct='%1.1f%%', startangle=90)
-                ax.set_title(f'Distribution of {col}', fontsize=14, fontweight='bold')
+            try:
+                # Get value counts
+                value_counts = self.df[col].value_counts()
+                
+                # Limit to top N and group others
+                if len(value_counts) > n_slices:
+                    top_values = value_counts.head(n_slices)
+                    others_sum = value_counts.iloc[n_slices:].sum()
+                    top_values['Other'] = others_sum
+                    value_counts = top_values
+                
+                # Color schemes
+                color_schemes = {
+                    'default': None,  # matplotlib default
+                    'pastel': plt.cm.Pastel1(range(len(value_counts))),
+                    'bold': plt.cm.Set1(range(len(value_counts))),
+                    'blues': plt.cm.Blues(np.linspace(0.4, 0.8, len(value_counts))),
+                    'greens': plt.cm.Greens(np.linspace(0.4, 0.8, len(value_counts))),
+                    'reds': plt.cm.Reds(np.linspace(0.4, 0.8, len(value_counts)))
+                }
+                
+                colors = color_schemes.get(color_var.get())
+                
+                # Explode options
+                explode = None
+                if explode_largest_var.get():
+                    explode = [0.1 if i == 0 else 0 for i in range(len(value_counts))]
+                
+                # Format percentages and/or values
+                autopct_format = None
+                if show_percent_var.get() and show_values_var.get():
+                    autopct_format = lambda pct: f'{pct:.1f}%\n({int(pct/100*value_counts.sum())})'
+                elif show_percent_var.get():
+                    autopct_format = '%1.1f%%'
+                elif show_values_var.get():
+                    autopct_format = lambda pct: f'{int(pct/100*value_counts.sum())}'
+                
+                # Chart title
+                chart_title = title_var.get() if title_var.get() else f'Distribution of {col}'
+                
+                def plot_func(fig, ax):
+                    wedges, texts, autotexts = ax.pie(
+                        value_counts.values, 
+                        labels=value_counts.index, 
+                        autopct=autopct_format,
+                        startangle=90,
+                        colors=colors,
+                        explode=explode,
+                        shadow=explode_largest_var.get()
+                    )
+                    
+                    # Style the text
+                    for text in texts:
+                        text.set_fontsize(10)
+                    
+                    if autotexts:
+                        for autotext in autotexts:
+                            autotext.set_color('white')
+                            autotext.set_fontsize(9)
+                            autotext.set_fontweight('bold')
+                    
+                    ax.set_title(chart_title, fontsize=14, fontweight='bold', pad=20)
+                    ax.axis('equal')
+                
+                self.create_plot(plot_func)
+                dialog.destroy()
+                
+            except Exception as e:
+                messagebox.showerror("Error", f"Pie chart creation failed:\n{str(e)}")
+        
+        # Action buttons
+        button_frame = ttk.Frame(dialog)
+        button_frame.pack(pady=20)
+        
+        ttk.Button(button_frame, text="Create Chart", command=plot, 
+                  style='Action.TButton').pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+    
+    def plot_bar(self):
+        """Create bar chart"""
+        if self.df is None:
+            messagebox.showwarning("Warning", "No data loaded!")
+            return
+        
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Create Bar Chart")
+        dialog.geometry("400x250")
+        
+        ttk.Label(dialog, text="X-axis (Categories):", font=('Arial', 11, 'bold')).pack(pady=5)
+        x_var = tk.StringVar(value=self.df.columns[0])
+        ttk.Combobox(dialog, textvariable=x_var, values=list(self.df.columns), 
+                     state='readonly', width=30).pack(pady=5)
+        
+        ttk.Label(dialog, text="Y-axis (Values):", font=('Arial', 11, 'bold')).pack(pady=5)
+        numeric_cols = self.df.select_dtypes(include=[np.number]).columns.tolist()
+        y_var = tk.StringVar(value=numeric_cols[0] if numeric_cols else self.df.columns[0])
+        ttk.Combobox(dialog, textvariable=y_var, values=list(self.df.columns), 
+                     state='readonly', width=30).pack(pady=5)
+        
+        ttk.Label(dialog, text="Chart Title (optional):", font=('Arial', 11, 'bold')).pack(pady=5)
+        title_var = tk.StringVar(value="")
+        ttk.Entry(dialog, textvariable=title_var, width=33).pack(pady=5)
+        
+        def plot():
+            x_col = x_var.get()
+            y_col = y_var.get()
+            title = title_var.get() or f"{y_col} by {x_col}"
             
-            self.create_plot(plot_func)
-            dialog.destroy()
+            try:
+                # Aggregate data if needed (group by x, sum y)
+                if self.df[x_col].duplicated().any():
+                    plot_data = self.df.groupby(x_col)[y_col].sum().sort_values(ascending=False)
+                else:
+                    plot_data = self.df.set_index(x_col)[y_col].sort_values(ascending=False)
+                
+                def plot_func(fig, ax):
+                    plot_data.plot(kind='bar', ax=ax, color='steelblue', edgecolor='black')
+                    ax.set_title(title, fontsize=14, fontweight='bold')
+                    ax.set_xlabel(x_col, fontsize=11)
+                    ax.set_ylabel(y_col, fontsize=11)
+                    ax.grid(True, alpha=0.3, axis='y')
+                    plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
+                
+                self.create_plot(plot_func)
+                dialog.destroy()
+            except Exception as e:
+                messagebox.showerror("Error", f"Bar chart creation failed:\n{str(e)}")
+        
+        ttk.Button(dialog, text="Create Chart", command=plot).pack(pady=15)
+    
+    def plot_line(self):
+        """Create line chart"""
+        if self.df is None:
+            messagebox.showwarning("Warning", "No data loaded!")
+            return
+        
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Create Line Chart")
+        dialog.geometry("400x250")
+        
+        ttk.Label(dialog, text="X-axis (usually date/time):", font=('Arial', 11, 'bold')).pack(pady=5)
+        x_var = tk.StringVar(value=self.df.columns[0])
+        ttk.Combobox(dialog, textvariable=x_var, values=list(self.df.columns), 
+                     state='readonly', width=30).pack(pady=5)
+        
+        ttk.Label(dialog, text="Y-axis (Values):", font=('Arial', 11, 'bold')).pack(pady=5)
+        numeric_cols = self.df.select_dtypes(include=[np.number]).columns.tolist()
+        y_var = tk.StringVar(value=numeric_cols[0] if numeric_cols else self.df.columns[0])
+        ttk.Combobox(dialog, textvariable=y_var, values=list(self.df.columns), 
+                     state='readonly', width=30).pack(pady=5)
+        
+        ttk.Label(dialog, text="Chart Title (optional):", font=('Arial', 11, 'bold')).pack(pady=5)
+        title_var = tk.StringVar(value="")
+        ttk.Entry(dialog, textvariable=title_var, width=33).pack(pady=5)
+        
+        def plot():
+            x_col = x_var.get()
+            y_col = y_var.get()
+            title = title_var.get() or f"{y_col} over {x_col}"
+            
+            try:
+                # Try to convert x to datetime if it looks like dates
+                df_temp = self.df[[x_col, y_col]].copy()
+                try:
+                    df_temp[x_col] = pd.to_datetime(df_temp[x_col])
+                    df_temp = df_temp.sort_values(x_col)
+                except:
+                    pass  # Not a date column, use as is
+                
+                def plot_func(fig, ax):
+                    ax.plot(df_temp[x_col], df_temp[y_col], marker='o', linestyle='-', 
+                           linewidth=2, markersize=5, color='steelblue')
+                    ax.set_title(title, fontsize=14, fontweight='bold')
+                    ax.set_xlabel(x_col, fontsize=11)
+                    ax.set_ylabel(y_col, fontsize=11)
+                    ax.grid(True, alpha=0.3)
+                    plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
+                
+                self.create_plot(plot_func)
+                dialog.destroy()
+            except Exception as e:
+                messagebox.showerror("Error", f"Line chart creation failed:\n{str(e)}")
         
         ttk.Button(dialog, text="Create Chart", command=plot).pack(pady=15)
     
@@ -900,12 +3519,14 @@ class DataAnalystApp:
         self.output_text.insert(tk.END, "=" * 80 + "\n")
         self.output_text.insert(tk.END, "🛍️  E-COMMERCE ANALYTICS DASHBOARD\n")
         self.output_text.insert(tk.END, "=" * 80 + "\n\n")
+        self.output_text.update_idletasks()  # Show header
         
         # Key metrics
         self.output_text.insert(tk.END, "📊 KEY METRICS:\n")
         self.output_text.insert(tk.END, "-" * 80 + "\n")
         self.output_text.insert(tk.END, f"Total Records: {len(self.df):,}\n")
         self.output_text.insert(tk.END, f"Date Range: {datetime.now().strftime('%Y-%m-%d')}\n\n")
+        self.output_text.update_idletasks()  # Show key metrics
         
         # Find revenue-like columns
         revenue_cols = [col for col in self.df.columns if any(x in col.lower() for x in ['revenue', 'sales', 'price', 'amount', 'total'])]
@@ -917,6 +3538,7 @@ class DataAnalystApp:
                     self.output_text.insert(tk.END, f"    Total: ${self.df[col].sum():,.2f}\n")
                     self.output_text.insert(tk.END, f"    Average: ${self.df[col].mean():,.2f}\n")
                     self.output_text.insert(tk.END, f"    Median: ${self.df[col].median():,.2f}\n\n")
+            self.output_text.update_idletasks()  # Show revenue analysis
         
         # Customer analysis
         customer_cols = [col for col in self.df.columns if 'customer' in col.lower() or 'user' in col.lower()]
@@ -925,9 +3547,11 @@ class DataAnalystApp:
             for col in customer_cols[:2]:
                 unique_count = self.df[col].nunique()
                 self.output_text.insert(tk.END, f"  Unique {col}: {unique_count:,}\n")
+            self.output_text.update_idletasks()  # Show customer insights
         
         self.output_text.insert(tk.END, "\n" + "=" * 80 + "\n")
         self.output_text.insert(tk.END, "💡 Use Visualize menu for detailed charts\n")
+        self.output_text.update_idletasks()  # Show complete
         
         self.notebook.select(0)
         self.update_status("Dashboard generated")
@@ -952,11 +3576,13 @@ class DataAnalystApp:
             self.output_text.insert(tk.END, f"=" * 80 + "\n")
             self.output_text.insert(tk.END, f"COLUMN ANALYSIS: {col}\n")
             self.output_text.insert(tk.END, "=" * 80 + "\n\n")
+            self.output_text.update_idletasks()  # Show header immediately
             
             self.output_text.insert(tk.END, f"Data Type: {self.df[col].dtype}\n")
             self.output_text.insert(tk.END, f"Non-Null Count: {self.df[col].notna().sum():,}\n")
             self.output_text.insert(tk.END, f"Null Count: {self.df[col].isna().sum():,}\n")
             self.output_text.insert(tk.END, f"Unique Values: {self.df[col].nunique():,}\n\n")
+            self.output_text.update_idletasks()  # Show basic info
             
             if pd.api.types.is_numeric_dtype(self.df[col]):
                 self.output_text.insert(tk.END, "STATISTICS:\n")
@@ -965,10 +3591,12 @@ class DataAnalystApp:
                 self.output_text.insert(tk.END, f"  Std Dev: {self.df[col].std():.2f}\n")
                 self.output_text.insert(tk.END, f"  Min: {self.df[col].min():.2f}\n")
                 self.output_text.insert(tk.END, f"  Max: {self.df[col].max():.2f}\n\n")
+                self.output_text.update_idletasks()  # Show statistics
             
             self.output_text.insert(tk.END, "TOP 10 VALUES:\n")
             value_counts = self.df[col].value_counts().head(10)
             self.output_text.insert(tk.END, value_counts.to_string())
+            self.output_text.update_idletasks()  # Show value counts
             
             self.notebook.select(0)
             dialog.destroy()
@@ -983,85 +3611,455 @@ class DataAnalystApp:
         messagebox.showinfo("Coming Soon", "Interactive filtering will be added in next version!")
     
     def sort_data(self):
-        """Sort data by column"""
+        """Sort data by column(s) with advanced options"""
         if self.df is None:
             messagebox.showwarning("Warning", "No data loaded!")
             return
         
         dialog = tk.Toplevel(self.root)
         dialog.title("Sort Data")
-        dialog.geometry("350x180")
+        dialog.geometry("500x450")
         
-        ttk.Label(dialog, text="Sort by column:", font=('Arial', 11)).pack(pady=10)
-        col_var = tk.StringVar(value=self.df.columns[0])
-        ttk.Combobox(dialog, textvariable=col_var, values=list(self.df.columns), state='readonly', width=30).pack(pady=5)
+        ttk.Label(dialog, text="Sort Data - Advanced", 
+                 font=('Arial', 12, 'bold')).pack(pady=10)
         
-        order_var = tk.StringVar(value="ascending")
-        ttk.Radiobutton(dialog, text="Ascending", variable=order_var, value="ascending").pack(pady=3)
-        ttk.Radiobutton(dialog, text="Descending", variable=order_var, value="descending").pack(pady=3)
+        # Primary sort
+        ttk.Label(dialog, text="Primary Sort Column:", 
+                 font=('Arial', 10, 'bold')).pack(pady=(10,5))
+        
+        col1_frame = ttk.Frame(dialog)
+        col1_frame.pack(pady=5)
+        
+        col1_var = tk.StringVar(value=self.df.columns[0])
+        ttk.Combobox(col1_frame, textvariable=col1_var, 
+                    values=list(self.df.columns), state='readonly', width=25).pack(side=tk.LEFT, padx=5)
+        
+        order1_var = tk.StringVar(value="ascending")
+        ttk.Radiobutton(col1_frame, text="A→Z / 1→9", 
+                       variable=order1_var, value="ascending").pack(side=tk.LEFT, padx=5)
+        ttk.Radiobutton(col1_frame, text="Z→A / 9→1", 
+                       variable=order1_var, value="descending").pack(side=tk.LEFT, padx=5)
+        
+        # Secondary sort (optional)
+        ttk.Label(dialog, text="Secondary Sort Column (optional):", 
+                 font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        
+        col2_frame = ttk.Frame(dialog)
+        col2_frame.pack(pady=5)
+        
+        col2_var = tk.StringVar(value="None")
+        col2_dropdown = ttk.Combobox(col2_frame, textvariable=col2_var, 
+                                     values=["None"] + list(self.df.columns), 
+                                     state='readonly', width=25)
+        col2_dropdown.pack(side=tk.LEFT, padx=5)
+        
+        order2_var = tk.StringVar(value="ascending")
+        ttk.Radiobutton(col2_frame, text="A→Z / 1→9", 
+                       variable=order2_var, value="ascending").pack(side=tk.LEFT, padx=5)
+        ttk.Radiobutton(col2_frame, text="Z→A / 9→1", 
+                       variable=order2_var, value="descending").pack(side=tk.LEFT, padx=5)
+        
+        # Tertiary sort (optional)
+        ttk.Label(dialog, text="Tertiary Sort Column (optional):", 
+                 font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        
+        col3_frame = ttk.Frame(dialog)
+        col3_frame.pack(pady=5)
+        
+        col3_var = tk.StringVar(value="None")
+        col3_dropdown = ttk.Combobox(col3_frame, textvariable=col3_var, 
+                                     values=["None"] + list(self.df.columns), 
+                                     state='readonly', width=25)
+        col3_dropdown.pack(side=tk.LEFT, padx=5)
+        
+        order3_var = tk.StringVar(value="ascending")
+        ttk.Radiobutton(col3_frame, text="A→Z / 1→9", 
+                       variable=order3_var, value="ascending").pack(side=tk.LEFT, padx=5)
+        ttk.Radiobutton(col3_frame, text="Z→A / 9→1", 
+                       variable=order3_var, value="descending").pack(side=tk.LEFT, padx=5)
+        
+        # NA handling
+        ttk.Label(dialog, text="Handle Missing Values (NA):", 
+                 font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        
+        na_var = tk.StringVar(value="last")
+        na_frame = ttk.Frame(dialog)
+        na_frame.pack(pady=5)
+        
+        ttk.Radiobutton(na_frame, text="Put at end", 
+                       variable=na_var, value="last").pack(side=tk.LEFT, padx=10)
+        ttk.Radiobutton(na_frame, text="Put at beginning", 
+                       variable=na_var, value="first").pack(side=tk.LEFT, padx=10)
+        
+        # Info label
+        ttk.Label(dialog, text="Tip: Multi-column sort applies in order (Primary → Secondary → Tertiary)", 
+                 font=('Arial', 8), foreground='gray').pack(pady=10)
         
         def sort():
-            col = col_var.get()
-            ascending = (order_var.get() == "ascending")
-            self.df = self.df.sort_values(by=col, ascending=ascending)
-            self.update_info_panel()
-            self.view_data()
-            self.update_status(f"Sorted by {col} ({order_var.get()})")
-            messagebox.showinfo("Success", f"Data sorted by {col}")
-            dialog.destroy()
+            try:
+                # Build column list and order list
+                cols = [col1_var.get()]
+                orders = [order1_var.get() == "ascending"]
+                
+                if col2_var.get() != "None":
+                    cols.append(col2_var.get())
+                    orders.append(order2_var.get() == "ascending")
+                
+                if col3_var.get() != "None":
+                    cols.append(col3_var.get())
+                    orders.append(order3_var.get() == "ascending")
+                
+                # Handle NA position
+                na_position = na_var.get()
+                
+                # Use analysis service
+                sorted_df = self.analysis_service.sort_data(
+                    self.df,
+                    cols,
+                    ascending=orders
+                )
+                self.df = sorted_df
+                
+                # Output to text area
+                self.output_text.delete(1.0, tk.END)
+                self.output_text.insert(tk.END, "=" * 80 + "\n")
+                self.output_text.insert(tk.END, "SORT DATA - OPERATION COMPLETE\n")
+                self.output_text.insert(tk.END, "=" * 80 + "\n\n")
+                
+                sort_desc = " → ".join(cols)
+                self.output_text.insert(tk.END, f"Sort order: {sort_desc}\n")
+                self.output_text.insert(tk.END, f"NA position: {na_position}\n\n")
+                
+                for i, col in enumerate(cols):
+                    order_text = "Ascending (A→Z / 1→9)" if orders[i] else "Descending (Z→A / 9→1)"
+                    self.output_text.insert(tk.END, f"  Level {i+1}: {col} - {order_text}\n")
+                
+                self.output_text.insert(tk.END, "\n" + "=" * 80 + "\n")
+                self.output_text.insert(tk.END, f"SUCCESS: Data sorted by {len(cols)} level(s)\n")
+                self.output_text.insert(tk.END, f"Total rows: {len(self.df)}\n")
+                self.output_text.update_idletasks()
+                self.notebook.select(0)  # Switch to Output tab
+                
+                # Update display
+                self.update_info_panel()
+                
+                # Status message
+                self.update_status(f"Sorted by: {sort_desc}")
+                messagebox.showinfo("Success", 
+                                  f"Data sorted successfully!\n\n"
+                                  f"Sort order: {sort_desc}\n"
+                                  f"NA position: {na_position}")
+                dialog.destroy()
+                
+            except Exception as e:
+                messagebox.showerror("Error", f"Sort failed:\n{str(e)}")
         
-        ttk.Button(dialog, text="Sort", command=sort).pack(pady=10)
+        # Action buttons
+        button_frame = ttk.Frame(dialog)
+        button_frame.pack(pady=20)
+        
+        ttk.Button(button_frame, text="Sort Data", command=sort, 
+                  style='Action.TButton').pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
     
     def convert_dtypes(self):
-        """Convert column data types"""
+        """Convert column data types with advanced options"""
         if self.df is None:
             messagebox.showwarning("Warning", "No data loaded!")
             return
         
         dialog = tk.Toplevel(self.root)
         dialog.title("Convert Data Types")
-        dialog.geometry("400x250")
+        dialog.geometry("550x550")
         
-        ttk.Label(dialog, text="Select column:", font=('Arial', 11)).pack(pady=10)
+        ttk.Label(dialog, text="Convert Column Data Type - Advanced", 
+                 font=('Arial', 12, 'bold')).pack(pady=10)
+        
+        # Column selection with current type display
+        col_frame = ttk.Frame(dialog)
+        col_frame.pack(pady=10, fill=tk.X, padx=20)
+        
+        ttk.Label(col_frame, text="Select column:", font=('Arial', 10, 'bold')).pack(anchor='w')
         col_var = tk.StringVar(value=self.df.columns[0])
-        ttk.Combobox(dialog, textvariable=col_var, values=list(self.df.columns), state='readonly', width=30).pack(pady=5)
+        col_dropdown = ttk.Combobox(col_frame, textvariable=col_var, 
+                                    values=list(self.df.columns), state='readonly', width=35)
+        col_dropdown.pack(pady=5)
         
-        ttk.Label(dialog, text="Convert to:", font=('Arial', 11)).pack(pady=10)
+        current_type_label = ttk.Label(col_frame, text="", font=('Arial', 9), foreground='gray')
+        current_type_label.pack(anchor='w')
+        
+        def update_current_type(*args):
+            col = col_var.get()
+            current_type = str(self.df[col].dtype)
+            current_type_label.config(text=f"Current type: {current_type}")
+        
+        col_var.trace('w', update_current_type)
+        update_current_type()
+        
+        # Target type selection
+        ttk.Label(dialog, text="Convert to:", font=('Arial', 10, 'bold')).pack(pady=(10,5))
+        
         type_var = tk.StringVar(value="numeric")
-        ttk.Radiobutton(dialog, text="Numeric (float)", variable=type_var, value="numeric").pack(pady=2)
-        ttk.Radiobutton(dialog, text="Integer", variable=type_var, value="integer").pack(pady=2)
-        ttk.Radiobutton(dialog, text="String", variable=type_var, value="string").pack(pady=2)
-        ttk.Radiobutton(dialog, text="DateTime", variable=type_var, value="datetime").pack(pady=2)
+        type_frame = ttk.Frame(dialog)
+        type_frame.pack(pady=5)
         
-        def convert():
+        ttk.Radiobutton(type_frame, text="Numeric (float)", 
+                       variable=type_var, value="numeric").grid(row=0, column=0, sticky='w', padx=10)
+        ttk.Radiobutton(type_frame, text="Integer", 
+                       variable=type_var, value="integer").grid(row=1, column=0, sticky='w', padx=10)
+        ttk.Radiobutton(type_frame, text="String/Text", 
+                       variable=type_var, value="string").grid(row=2, column=0, sticky='w', padx=10)
+        ttk.Radiobutton(type_frame, text="DateTime", 
+                       variable=type_var, value="datetime").grid(row=0, column=1, sticky='w', padx=10)
+        ttk.Radiobutton(type_frame, text="Boolean (True/False)", 
+                       variable=type_var, value="boolean").grid(row=1, column=1, sticky='w', padx=10)
+        ttk.Radiobutton(type_frame, text="Category", 
+                       variable=type_var, value="category").grid(row=2, column=1, sticky='w', padx=10)
+        
+        # Error handling
+        ttk.Label(dialog, text="Error handling:", font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        
+        error_var = tk.StringVar(value="coerce")
+        error_frame = ttk.Frame(dialog)
+        error_frame.pack(pady=5)
+        
+        ttk.Radiobutton(error_frame, text="Coerce (set invalid to NaN)", 
+                       variable=error_var, value="coerce").pack(anchor='w', padx=50)
+        ttk.Radiobutton(error_frame, text="Raise error if any invalid", 
+                       variable=error_var, value="raise").pack(anchor='w', padx=50)
+        ttk.Radiobutton(error_frame, text="Ignore (keep original)", 
+                       variable=error_var, value="ignore").pack(anchor='w', padx=50)
+        
+        # DateTime format (conditional)
+        datetime_frame = ttk.LabelFrame(dialog, text="DateTime Format (optional)", padding=10)
+        datetime_frame.pack(pady=10, padx=20, fill=tk.X)
+        
+        ttk.Label(datetime_frame, text="Format string (e.g., '%Y-%m-%d', '%m/%d/%Y'):").pack(anchor='w')
+        format_var = tk.StringVar(value="")
+        ttk.Entry(datetime_frame, textvariable=format_var, width=40).pack(pady=5)
+        ttk.Label(datetime_frame, text="Leave blank for automatic detection", 
+                 font=('Arial', 8), foreground='gray').pack(anchor='w')
+        
+        # Preview area
+        preview_frame = ttk.LabelFrame(dialog, text="Preview", padding=10)
+        preview_frame.pack(pady=10, padx=20, fill=tk.BOTH, expand=True)
+        
+        preview_text = tk.Text(preview_frame, height=6, width=60, wrap=tk.WORD)
+        preview_text.pack(fill=tk.BOTH, expand=True)
+        preview_text.config(state=tk.DISABLED)
+        
+        def preview_conversion():
+            """Show preview of conversion"""
             col = col_var.get()
             dtype = type_var.get()
+            error_handling = error_var.get()
+            
+            preview_text.config(state=tk.NORMAL)
+            preview_text.delete(1.0, tk.END)
             
             try:
+                # Test conversion on sample
+                sample = self.df[col].head(10).copy()
+                
                 if dtype == "numeric":
-                    self.df[col] = pd.to_numeric(self.df[col], errors='coerce')
+                    converted = pd.to_numeric(sample, errors=error_handling)
                 elif dtype == "integer":
-                    self.df[col] = pd.to_numeric(self.df[col], errors='coerce').astype('Int64')
+                    converted = pd.to_numeric(sample, errors=error_handling)
+                    if error_handling != "ignore":
+                        converted = converted.astype('Int64')
+                elif dtype == "string":
+                    converted = sample.astype(str)
+                elif dtype == "datetime":
+                    fmt = format_var.get() if format_var.get() else None
+                    converted = pd.to_datetime(sample, format=fmt, errors=error_handling)
+                elif dtype == "boolean":
+                    converted = sample.astype(bool)
+                elif dtype == "category":
+                    converted = sample.astype('category')
+                
+                preview_text.insert(tk.END, "✅ Conversion Preview (first 10 rows):\n\n")
+                preview_text.insert(tk.END, f"Original → Converted\n")
+                preview_text.insert(tk.END, "-" * 50 + "\n")
+                
+                for orig, conv in zip(sample, converted):
+                    preview_text.insert(tk.END, f"{orig} → {conv}\n")
+                
+                preview_text.insert(tk.END, f"\n✓ Target type: {dtype}")
+                
+            except Exception as e:
+                preview_text.insert(tk.END, f"❌ Preview failed:\n{str(e)}\n\n")
+                preview_text.insert(tk.END, "Tip: Try changing error handling to 'coerce'")
+            
+            preview_text.config(state=tk.DISABLED)
+        
+        def convert():
+            """Perform actual conversion"""
+            col = col_var.get()
+            dtype = type_var.get()
+            error_handling = error_var.get()
+            
+            try:
+                old_dtype = str(self.df[col].dtype)
+                
+                if dtype == "numeric":
+                    self.df[col] = pd.to_numeric(self.df[col], errors=error_handling)
+                elif dtype == "integer":
+                    self.df[col] = pd.to_numeric(self.df[col], errors=error_handling)
+                    if error_handling != "ignore":
+                        self.df[col] = self.df[col].astype('Int64')
                 elif dtype == "string":
                     self.df[col] = self.df[col].astype(str)
                 elif dtype == "datetime":
-                    self.df[col] = pd.to_datetime(self.df[col], errors='coerce')
+                    fmt = format_var.get() if format_var.get() else None
+                    self.df[col] = pd.to_datetime(self.df[col], format=fmt, errors=error_handling)
+                elif dtype == "boolean":
+                    self.df[col] = self.df[col].astype(bool)
+                elif dtype == "category":
+                    self.df[col] = self.df[col].astype('category')
+                
+                new_dtype = str(self.df[col].dtype)
+                
+                # Output to text area
+                self.output_text.delete(1.0, tk.END)
+                self.output_text.insert(tk.END, "=" * 80 + "\n")
+                self.output_text.insert(tk.END, "CONVERT DATA TYPES - OPERATION COMPLETE\n")
+                self.output_text.insert(tk.END, "=" * 80 + "\n\n")
+                
+                self.output_text.insert(tk.END, f"Column: {col}\n")
+                self.output_text.insert(tk.END, f"Old type: {old_dtype}\n")
+                self.output_text.insert(tk.END, f"New type: {new_dtype}\n")
+                self.output_text.insert(tk.END, f"Error handling: {error_handling}\n\n")
+                
+                if dtype == "datetime" and format_var.get():
+                    self.output_text.insert(tk.END, f"Date format used: {format_var.get()}\n\n")
+                
+                self.output_text.insert(tk.END, "=" * 80 + "\n")
+                self.output_text.insert(tk.END, f"SUCCESS: Column type converted successfully\n")
+                self.output_text.insert(tk.END, f"Total rows: {len(self.df)}\n")
+                self.output_text.update_idletasks()
+                self.notebook.select(0)  # Switch to Output tab
                 
                 self.update_info_panel()
                 self.update_status(f"Converted {col} to {dtype}")
-                messagebox.showinfo("Success", f"Column {col} converted to {dtype}")
+                messagebox.showinfo("Success", 
+                                  f"Column '{col}' converted successfully!\n\n"
+                                  f"Old type: {old_dtype}\n"
+                                  f"New type: {new_dtype}\n"
+                                  f"Error handling: {error_handling}")
                 dialog.destroy()
+                
             except Exception as e:
                 messagebox.showerror("Error", f"Conversion failed:\n{str(e)}")
         
-        ttk.Button(dialog, text="Convert", command=convert).pack(pady=15)
+        # Action buttons
+        button_frame = ttk.Frame(dialog)
+        button_frame.pack(pady=15)
+        
+        ttk.Button(button_frame, text="Preview", command=preview_conversion).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Convert", command=convert, 
+                  style='Action.TButton').pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
     
     def groupby_analysis(self):
         """Group by analysis"""
         if self.df is None:
             messagebox.showwarning("Warning", "No data loaded!")
             return
-        messagebox.showinfo("Coming Soon", "Group by analysis will be added in next version!")
+        
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Group By Analysis")
+        dialog.geometry("450x400")
+        
+        # Group by column
+        ttk.Label(dialog, text="Group by column:", font=('Arial', 11, 'bold')).pack(pady=(10,5))
+        groupby_var = tk.StringVar(value=self.df.columns[0])
+        ttk.Combobox(dialog, textvariable=groupby_var, values=list(self.df.columns), 
+                     state='readonly', width=35).pack(pady=5)
+        
+        # Aggregate column
+        ttk.Label(dialog, text="Aggregate column:", font=('Arial', 11, 'bold')).pack(pady=(15,5))
+        agg_col_var = tk.StringVar(value=self.df.columns[0])
+        ttk.Combobox(dialog, textvariable=agg_col_var, values=list(self.df.columns), 
+                     state='readonly', width=35).pack(pady=5)
+        
+        # Aggregation function
+        ttk.Label(dialog, text="Aggregation function:", font=('Arial', 11, 'bold')).pack(pady=(15,5))
+        agg_func_var = tk.StringVar(value="sum")
+        func_frame = ttk.Frame(dialog)
+        func_frame.pack(pady=5)
+        
+        functions = [
+            ("Sum", "sum"),
+            ("Mean", "mean"),
+            ("Count", "count"),
+            ("Min", "min"),
+            ("Max", "max"),
+            ("Median", "median")
+        ]
+        
+        for i, (text, value) in enumerate(functions):
+            ttk.Radiobutton(func_frame, text=text, variable=agg_func_var, 
+                           value=value).grid(row=i//3, column=i%3, padx=10, pady=2)
+        
+        # Sort order
+        ttk.Label(dialog, text="Sort results:", font=('Arial', 11, 'bold')).pack(pady=(15,5))
+        sort_var = tk.StringVar(value="descending")
+        sort_frame = ttk.Frame(dialog)
+        sort_frame.pack(pady=5)
+        ttk.Radiobutton(sort_frame, text="Descending (High to Low)", 
+                       variable=sort_var, value="descending").pack(side=tk.LEFT, padx=10)
+        ttk.Radiobutton(sort_frame, text="Ascending (Low to High)", 
+                       variable=sort_var, value="ascending").pack(side=tk.LEFT, padx=10)
+        
+        def perform_groupby():
+            try:
+                group_col = groupby_var.get()
+                agg_col = agg_col_var.get()
+                agg_func = agg_func_var.get()
+                ascending = (sort_var.get() == "ascending")
+                
+                # Perform groupby
+                if agg_func == "count":
+                    result = self.df.groupby(group_col)[agg_col].count()
+                elif agg_func == "sum":
+                    result = self.df.groupby(group_col)[agg_col].sum()
+                elif agg_func == "mean":
+                    result = self.df.groupby(group_col)[agg_col].mean()
+                elif agg_func == "median":
+                    result = self.df.groupby(group_col)[agg_col].median()
+                elif agg_func == "min":
+                    result = self.df.groupby(group_col)[agg_col].min()
+                elif agg_func == "max":
+                    result = self.df.groupby(group_col)[agg_col].max()
+                
+                # Sort results
+                result = result.sort_values(ascending=ascending)
+                
+                # Display results - both in text (header) and grid (data)
+                self.output_text.delete(1.0, tk.END)
+                self.output_text.insert(tk.END, "=" * 80 + "\n")
+                self.output_text.insert(tk.END, f"GROUP BY ANALYSIS: {group_col}\n")
+                self.output_text.insert(tk.END, f"Aggregation: {agg_func.upper()}({agg_col})\n")
+                self.output_text.insert(tk.END, f"Sort Order: {'Ascending' if ascending else 'Descending'}\n")
+                self.output_text.insert(tk.END, f"Total Groups: {len(result)}\n")
+                self.output_text.insert(tk.END, "=" * 80 + "\n")
+                self.output_text.update_idletasks()
+                
+                # Display results in Excel-like grid
+                self.display_results_in_grid(
+                    result, 
+                    title=f"Group By: {group_col} | {agg_func.upper()}({agg_col})"
+                )
+                
+                self.notebook.select(0)
+                self.update_status(f"Group by {group_col} completed")
+                messagebox.showinfo("Success", f"Grouped by {group_col} - {len(result)} groups found")
+                dialog.destroy()
+                
+            except Exception as e:
+                messagebox.showerror("Error", f"Group by failed:\n{str(e)}")
+        
+        ttk.Button(dialog, text="Analyze", command=perform_groupby).pack(pady=20)
     
     def pivot_table_analysis(self):
         """Pivot table"""
@@ -1087,9 +4085,11 @@ class DataAnalystApp:
         self.output_text.insert(tk.END, "=" * 80 + "\n")
         self.output_text.insert(tk.END, "CORRELATION ANALYSIS\n")
         self.output_text.insert(tk.END, "=" * 80 + "\n\n")
+        self.output_text.update_idletasks()  # Show header immediately
         self.output_text.insert(tk.END, corr_matrix.to_string())
         self.output_text.insert(tk.END, "\n\n" + "=" * 80 + "\n")
         self.output_text.insert(tk.END, "💡 Use Visualize > Correlation Heatmap for visual representation\n")
+        self.output_text.update_idletasks()  # Show complete output
         
         self.notebook.select(0)
         self.update_status("Correlation analysis completed")
@@ -1196,6 +4196,7 @@ class DataAnalystApp:
         self.output_text.insert(tk.END, "=" * 80 + "\n")
         self.output_text.insert(tk.END, "DATA PROFILING REPORT\n")
         self.output_text.insert(tk.END, "=" * 80 + "\n\n")
+        self.output_text.update_idletasks()  # Show header immediately
         
         profile = DataProfiler.generate_profile(self.df)
         
@@ -1204,26 +4205,31 @@ class DataAnalystApp:
         self.output_text.insert(tk.END, "-" * 80 + "\n")
         for key, value in profile['overview'].items():
             self.output_text.insert(tk.END, f"  {key}: {value}\n")
+        self.output_text.update_idletasks()  # Show overview
         
         # Quality Score
         self.output_text.insert(tk.END, f"\n📊 DATA QUALITY SCORE: {profile['quality']['quality_score']}/100\n\n")
+        self.output_text.update_idletasks()  # Show quality score
         
         # Issues
         if profile['quality']['total_issues'] > 0:
             self.output_text.insert(tk.END, f"⚠️ ISSUES FOUND ({profile['quality']['total_issues']}):\n")
             for issue in profile['quality']['issues'][:10]:
                 self.output_text.insert(tk.END, f"  [{issue['severity']}] {issue['type']}: {issue['column']}\n")
+            self.output_text.update_idletasks()  # Show issues
         
         # Recommendations
         self.output_text.insert(tk.END, f"\n💡 RECOMMENDATIONS ({len(profile['recommendations'])}):\n")
         for rec in profile['recommendations']:
             self.output_text.insert(tk.END, f"  [{rec['priority']}] {rec['action']}: {rec['reason']}\n")
+        self.output_text.update_idletasks()  # Show recommendations
         
         # Strong correlations
         if profile['correlations'].get('strong_correlations'):
             self.output_text.insert(tk.END, f"\n🔗 STRONG CORRELATIONS:\n")
             for corr in profile['correlations']['strong_correlations'][:5]:
                 self.output_text.insert(tk.END, f"  {corr['col1']} ↔ {corr['col2']}: {corr['correlation']:.3f} ({corr['strength']})\n")
+            self.output_text.update_idletasks()  # Show correlations
         
         self.notebook.select(0)
         self.update_status("Data profiling report generated")
@@ -1458,6 +4464,7 @@ class DataAnalystApp:
         # Display in output
         self.output_text.delete(1.0, tk.END)
         self.output_text.insert(tk.END, summary)
+        self.output_text.update_idletasks()  # Show immediately
         self.notebook.select(0)
         
         # Also copy to clipboard
@@ -1483,6 +4490,7 @@ class DataAnalystApp:
         # Display in output
         self.output_text.delete(1.0, tk.END)
         self.output_text.insert(tk.END, email_body)
+        self.output_text.update_idletasks()  # Show immediately
         self.notebook.select(0)
         
         # Copy to clipboard
@@ -1515,14 +4523,22 @@ For Shopify Analysis:
     def show_shortcuts(self):
         """Show keyboard shortcuts"""
         shortcuts = """KEYBOARD SHORTCUTS
-        
-Ctrl+O - Import CSV
+
+FILE OPERATIONS:
+Ctrl+O - Import CSV file
+Ctrl+E - Export CSV file  
+Ctrl+Q - Quit application
+
+DATA OPERATIONS:
 Ctrl+D - View Data
 Ctrl+S - Show Statistics
+Ctrl+R - Reset Data to original
+Ctrl+F - Advanced Filters
 
-Coming Soon:
-Ctrl+F - Filter Data
-Ctrl+E - Export Data
+HELP:
+F1 - About NexData
+
+TIP: All shortcuts work with capital or lowercase!
 """
         messagebox.showinfo("Keyboard Shortcuts", shortcuts)
     
@@ -1679,11 +4695,244 @@ OR generate HTML report: File > Generate Executive Report
             messagebox.showerror("Error", f"Failed to open guide:\n{str(e)}")
     
     def advanced_filters(self):
-        """Apply advanced filters"""
+        """Apply advanced filters with GUI"""
         if self.df is None:
             messagebox.showwarning("Warning", "No data loaded!")
             return
-        messagebox.showinfo("Advanced Filters", "Use Analysis > SQL Query for advanced filtering.\n\nExample:\nSELECT * FROM data WHERE column > 100 AND column2 = 'value'")
+        
+        # Create dialog
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Advanced Filters")
+        dialog.geometry("700x550")
+        
+        ttk.Label(dialog, text="Advanced Filters - Build Complex Queries", 
+                 font=('Arial', 12, 'bold')).pack(pady=15)
+        
+        # Instructions
+        info_frame = ttk.LabelFrame(dialog, text="How to Use", padding=10)
+        info_frame.pack(pady=10, padx=20, fill=tk.X)
+        ttk.Label(info_frame, text="• Add multiple filter conditions\n"
+                                   "• Combine with AND/OR logic\n"
+                                   "• Preview results before applying",
+                 justify=tk.LEFT).pack()
+        
+        # Filter conditions container
+        conditions_frame = ttk.LabelFrame(dialog, text="Filter Conditions", padding=10)
+        conditions_frame.pack(pady=10, padx=20, fill=tk.BOTH, expand=True)
+        
+        # Scrollable frame for conditions
+        canvas = tk.Canvas(conditions_frame, height=200)
+        scrollbar = ttk.Scrollbar(conditions_frame, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
+        
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Store filter conditions
+        filter_conditions = []
+        
+        def add_condition():
+            """Add a new filter condition row"""
+            condition_frame = ttk.Frame(scrollable_frame)
+            condition_frame.pack(fill=tk.X, pady=5)
+            
+            # Condition number
+            row_num = len(filter_conditions) + 1
+            ttk.Label(condition_frame, text=f"{row_num}.", width=3).pack(side=tk.LEFT, padx=5)
+            
+            # Logic operator (AND/OR) - skip for first condition
+            logic_var = tk.StringVar(value="AND")
+            if row_num > 1:
+                logic_combo = ttk.Combobox(condition_frame, textvariable=logic_var, 
+                                          values=["AND", "OR"], state='readonly', width=6)
+                logic_combo.pack(side=tk.LEFT, padx=5)
+            else:
+                ttk.Label(condition_frame, text="      ", width=6).pack(side=tk.LEFT, padx=5)
+            
+            # Column selection
+            column_var = tk.StringVar()
+            column_combo = ttk.Combobox(condition_frame, textvariable=column_var,
+                                       values=list(self.df.columns), state='readonly', width=15)
+            column_combo.pack(side=tk.LEFT, padx=5)
+            if len(self.df.columns) > 0:
+                column_combo.current(0)
+            
+            # Operator selection
+            operator_var = tk.StringVar(value="==")
+            operator_combo = ttk.Combobox(condition_frame, textvariable=operator_var,
+                                         values=["==", "!=", ">", "<", ">=", "<=", "contains", "not contains"],
+                                         state='readonly', width=12)
+            operator_combo.pack(side=tk.LEFT, padx=5)
+            
+            # Value input
+            value_var = tk.StringVar()
+            value_entry = ttk.Entry(condition_frame, textvariable=value_var, width=15)
+            value_entry.pack(side=tk.LEFT, padx=5)
+            
+            # Remove button
+            def remove_this():
+                condition_frame.destroy()
+                filter_conditions.remove(condition_data)
+                # Update row numbers
+                for idx, cond in enumerate(filter_conditions, 1):
+                    cond['label'].config(text=f"{idx}.")
+            
+            remove_btn = ttk.Button(condition_frame, text="×", width=3, command=remove_this)
+            remove_btn.pack(side=tk.LEFT, padx=5)
+            
+            # Store condition data
+            condition_data = {
+                'frame': condition_frame,
+                'label': condition_frame.winfo_children()[0],
+                'logic': logic_var,
+                'column': column_var,
+                'operator': operator_var,
+                'value': value_var
+            }
+            filter_conditions.append(condition_data)
+        
+        # Add condition button
+        btn_frame = ttk.Frame(dialog)
+        btn_frame.pack(pady=10)
+        ttk.Button(btn_frame, text="+ Add Condition", command=add_condition).pack(side=tk.LEFT, padx=5)
+        
+        # Preview area
+        preview_frame = ttk.LabelFrame(dialog, text="Preview (First 10 rows)", padding=10)
+        preview_frame.pack(pady=10, padx=20, fill=tk.BOTH, expand=True)
+        
+        preview_text = tk.Text(preview_frame, height=8, width=70, wrap=tk.NONE)
+        preview_scroll = ttk.Scrollbar(preview_frame, orient=tk.VERTICAL, command=preview_text.yview)
+        preview_text.config(yscrollcommand=preview_scroll.set)
+        preview_text.grid(row=0, column=0, sticky='nsew')
+        preview_scroll.grid(row=0, column=1, sticky='ns')
+        preview_frame.grid_rowconfigure(0, weight=1)
+        preview_frame.grid_columnconfigure(0, weight=1)
+        preview_text.config(state=tk.DISABLED)
+        
+        def build_filter_query():
+            """Build pandas query from conditions"""
+            if not filter_conditions:
+                return None
+            
+            query_parts = []
+            for idx, cond in enumerate(filter_conditions):
+                col = cond['column'].get()
+                op = cond['operator'].get()
+                val = cond['value'].get()
+                
+                if not col or not val:
+                    continue
+                
+                # Handle different operators
+                if op == "contains":
+                    query_part = f"`{col}`.astype(str).str.contains('{val}', case=False, na=False)"
+                elif op == "not contains":
+                    query_part = f"~`{col}`.astype(str).str.contains('{val}', case=False, na=False)"
+                else:
+                    # Try to convert value to appropriate type
+                    try:
+                        if self.df[col].dtype in ['int64', 'float64']:
+                            val_formatted = float(val)
+                        else:
+                            val_formatted = f"'{val}'"
+                        query_part = f"`{col}` {op} {val_formatted}"
+                    except:
+                        query_part = f"`{col}`.astype(str) {op} '{val}'"
+                
+                if idx > 0:
+                    logic = cond['logic'].get()
+                    query_parts.append(f" {logic.lower()} {query_part}")
+                else:
+                    query_parts.append(query_part)
+            
+            return "".join(query_parts) if query_parts else None
+        
+        def preview_filter():
+            """Preview filter results"""
+            preview_text.config(state=tk.NORMAL)
+            preview_text.delete(1.0, tk.END)
+            
+            try:
+                query = build_filter_query()
+                if not query:
+                    preview_text.insert(tk.END, "⚠️ Please add at least one filter condition\n")
+                    preview_text.config(state=tk.DISABLED)
+                    return
+                
+                # Apply filter
+                filtered_df = self.df.query(query)
+                
+                if len(filtered_df) == 0:
+                    preview_text.insert(tk.END, "⚠️ No rows match the filter criteria\n\n")
+                    preview_text.insert(tk.END, f"Query: {query}")
+                else:
+                    preview_text.insert(tk.END, f"✓ Found {len(filtered_df)} matching rows (showing first 10):\n\n")
+                    preview_text.insert(tk.END, filtered_df.head(10).to_string())
+                
+            except Exception as e:
+                preview_text.insert(tk.END, f"❌ Error: {str(e)}\n\nPlease check your filter conditions.")
+            
+            preview_text.config(state=tk.DISABLED)
+        
+        def apply_filter():
+            """Apply the filter to the dataframe"""
+            try:
+                query = build_filter_query()
+                if not query:
+                    messagebox.showwarning("Warning", "Please add at least one filter condition!")
+                    return
+                
+                before_count = len(self.df)
+                # Use pandas query directly (complex multi-condition filtering)
+                # AnalysisService.filter_data() is for single conditions
+                self.df = self.df.query(query)
+                after_count = len(self.df)
+                
+                # Output results
+                self.output_text.delete(1.0, tk.END)
+                self.output_text.insert(tk.END, "=" * 80 + "\n")
+                self.output_text.insert(tk.END, "ADVANCED FILTER APPLIED\n")
+                self.output_text.insert(tk.END, "=" * 80 + "\n\n")
+                self.output_text.insert(tk.END, f"Filter Query: {query}\n\n")
+                self.output_text.insert(tk.END, f"✓ Original rows: {before_count}\n")
+                self.output_text.insert(tk.END, f"✓ Filtered rows: {after_count}\n")
+                self.output_text.insert(tk.END, f"✓ Rows removed: {before_count - after_count}\n\n")
+                self.output_text.insert(tk.END, "=" * 80 + "\n")
+                self.output_text.update_idletasks()
+                self.notebook.select(0)
+                
+                self.update_info_panel()
+                self.view_data()
+                self.update_status(f"Filter applied: {after_count} rows")
+                
+                messagebox.showinfo("Success", 
+                                  f"Filter applied successfully!\n\n"
+                                  f"Original rows: {before_count}\n"
+                                  f"Filtered rows: {after_count}")
+                dialog.destroy()
+                
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to apply filter:\n{str(e)}")
+        
+        # Action buttons
+        action_frame = ttk.Frame(dialog)
+        action_frame.pack(pady=15)
+        
+        ttk.Button(action_frame, text="Preview", command=preview_filter).pack(side=tk.LEFT, padx=5)
+        ttk.Button(action_frame, text="Apply Filter", command=apply_filter, 
+                  style='Action.TButton').pack(side=tk.LEFT, padx=5)
+        ttk.Button(action_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+        
+        # Add first condition by default
+        add_condition()
     
     def data_quality_check(self):
         """Run data quality assessment"""
@@ -1725,6 +4974,7 @@ OR generate HTML report: File > Generate Executive Report
                 output += f"✓ {item}\n"
         self.output_text.delete(1.0, tk.END)
         self.output_text.insert(tk.END, output)
+        self.output_text.update_idletasks()  # Show immediately
         self.notebook.select(0)
         self.update_status("Auto insights generated")
     
@@ -1775,6 +5025,7 @@ OR generate HTML report: File > Generate Executive Report
                 output += f"Only in DF2: {', '.join(comparison['only_in_df2'])}\n"
             self.output_text.delete(1.0, tk.END)
             self.output_text.insert(tk.END, output)
+            self.output_text.update_idletasks()  # Show immediately
             self.notebook.select(0)
             self.update_status("Comparison complete")
         except Exception as e:
@@ -1809,6 +5060,7 @@ OR generate HTML report: File > Generate Executive Report
             report_text += f"{tip}\n"
         self.output_text.delete(1.0, tk.END)
         self.output_text.insert(tk.END, report_text)
+        self.output_text.update_idletasks()  # Show immediately
         self.notebook.select(0)
         self.update_status("Performance report generated")
     

@@ -1,6 +1,7 @@
 infinity.py
 .zzz_prompt
 .windsurf
+lessons_learned/
 
 # Python
 __pycache__/
