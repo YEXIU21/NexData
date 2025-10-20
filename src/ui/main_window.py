@@ -1679,85 +1679,23 @@ Would you like to recover this data?"""
         )
     
     def standardize_text_case(self):
+        """Standardize text case - delegates to dialog"""
         if self.df is None:
             messagebox.showwarning("Warning", "No data loaded!")
             return
-        text_cols = self.df.select_dtypes(include=['object']).columns.tolist()
-        if not text_cols:
-            messagebox.showinfo("Info", "No text columns found!")
-            return
-        dialog = tk.Toplevel(self.root)
-        dialog.title("Standardize Text Case")
-        dialog.geometry("500x400")
-        ttk.Label(dialog, text="Standardize Text Case", font=('Arial', 12, 'bold')).pack(pady=15)
-        ttk.Label(dialog, text="Select column:", font=('Arial', 10, 'bold')).pack(pady=(10,5))
-        col_var = tk.StringVar()
-        col_dropdown = ttk.Combobox(dialog, textvariable=col_var, values=text_cols, state='readonly', width=25)
-        col_dropdown.pack(pady=5)
-        if text_cols:
-            col_dropdown.current(0)
-        ttk.Label(dialog, text="Convert to:", font=('Arial', 10, 'bold')).pack(pady=(15,5))
-        case_var = tk.StringVar(value="title")
-        ttk.Radiobutton(dialog, text="Title Case (John Smith)", variable=case_var, value="title").pack(anchor='w', padx=50)
-        ttk.Radiobutton(dialog, text="UPPERCASE (JOHN SMITH)", variable=case_var, value="upper").pack(anchor='w', padx=50)
-        ttk.Radiobutton(dialog, text="lowercase (john smith)", variable=case_var, value="lower").pack(anchor='w', padx=50)
-        ttk.Radiobutton(dialog, text="Sentence case (John smith)", variable=case_var, value="sentence").pack(anchor='w', padx=50)
-        preview_text = scrolledtext.ScrolledText(dialog, height=6, width=50)
-        preview_text.pack(pady=10, padx=20)
-        preview_text.config(state=tk.DISABLED)
-        def show_preview():
-            col = col_var.get()
-            case = case_var.get()
-            preview_text.config(state=tk.NORMAL)
-            preview_text.delete(1.0, tk.END)
-            try:
-                sample = self.df[col].head(5)
-                preview_text.insert(tk.END, "Preview (first 5 values):\n\n")
-                for val in sample:
-                    if pd.notna(val):
-                        if case == "title":
-                            new_val = str(val).title()
-                        elif case == "upper":
-                            new_val = str(val).upper()
-                        elif case == "lower":
-                            new_val = str(val).lower()
-                        else:
-                            new_val = str(val).capitalize()
-                        preview_text.insert(tk.END, f"{val} → {new_val}\n")
-            except Exception as e:
-                preview_text.insert(tk.END, f"Error: {str(e)}")
-            preview_text.config(state=tk.DISABLED)
-        def apply_case():
-            col = col_var.get()
-            case = case_var.get()
-            try:
-                # Map UI case names to service case names
-                case_mapping = {
-                    "sentence": "capitalize"
-                }
-                service_case = case_mapping.get(case, case)
-                
-                # Use cleaning service
-                cleaned_df = self.cleaning_service.standardize_text_case(
-                    self.df, 
-                    [col], 
-                    service_case
-                )
-                self.df = cleaned_df
-                self.update_autosave_data()
-                
-                self.update_info_panel()
-                self.view_data()
-                self.update_status(f"Standardized {col} to {case} case")
-                messagebox.showinfo("Success", f"Text case standardized for '{col}'!")
-                dialog.destroy()
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to standardize case: {str(e)}")
-        btn_frame = ttk.Frame(dialog)
-        btn_frame.pack(pady=10)
-        ttk.Button(btn_frame, text="Preview", command=show_preview).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_frame, text="Apply", command=apply_case, style='Action.TButton').pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+        
+        def on_complete(cleaned_df, col, case, status_msg):
+            """Callback when case standardization complete"""
+            self.df = cleaned_df
+            self.update_autosave_data()
+            self.update_info_panel()
+            self.view_data()
+            self.update_status(status_msg)
+        
+        # Use dialog factory
+        CleaningDialogs.show_standardize_text_case_dialog(
+            self.root, self.df, self.cleaning_service, on_complete
+        )
     
     def remove_empty(self):
         if self.df is None:
