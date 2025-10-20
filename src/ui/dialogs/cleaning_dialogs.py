@@ -1,14 +1,15 @@
 """
-Cleaning Dialogs
-Data cleaning dialog windows extracted from main_window.py
-Follows separation of concerns and clean code principles
+Data Cleaning Dialog Classes
+Contains all cleaning-related dialogs extracted from main_window.py
+Following SEPARATION OF CONCERNS and CLEAN CODE principles
 """
 
 import tkinter as tk
-from tkinter import ttk, messagebox, scrolledtext
+from tkinter import ttk, messagebox
 import pandas as pd
 import numpy as np
-
+import re
+from datetime import datetime
 
 class CleaningDialogs:
     """Factory class for creating data cleaning dialog windows"""
@@ -1855,3 +1856,220 @@ class CleaningDialogs:
                 messagebox.showinfo("Success", f"Trimmed {len(text_cols)} columns!", parent=parent)
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to trim columns: {str(e)}", parent=parent)
+    
+    @staticmethod
+    def show_convert_dtypes_dialog(parent, df, output_callback, notebook_callback, info_panel_callback, status_callback):
+        """
+        Show convert data types dialog
+        
+        Args:
+            parent: Parent window
+            df: DataFrame to modify
+            output_callback: Callback function(text) to display output
+            notebook_callback: Callback to switch to output tab
+            info_panel_callback: Callback to update info panel
+            status_callback: Callback to update status
+        Returns:
+            modified DataFrame or None
+        """
+        dialog = tk.Toplevel(parent)
+        dialog.title("Convert Data Types")
+        dialog.geometry("550x550")
+        
+        ttk.Label(dialog, text="Convert Column Data Type - Advanced", 
+                 font=('Arial', 12, 'bold')).pack(pady=10)
+        
+        # Column selection with current type display
+        col_frame = ttk.Frame(dialog)
+        col_frame.pack(pady=10, fill=tk.X, padx=20)
+        
+        ttk.Label(col_frame, text="Select column:", font=('Arial', 10, 'bold')).pack(anchor='w')
+        col_var = tk.StringVar(value=df.columns[0])
+        col_dropdown = ttk.Combobox(col_frame, textvariable=col_var, 
+                                    values=list(df.columns), state='readonly', width=35)
+        col_dropdown.pack(pady=5)
+        
+        current_type_label = ttk.Label(col_frame, text="", font=('Arial', 9), foreground='gray')
+        current_type_label.pack(anchor='w')
+        
+        def update_current_type(*args):
+            col = col_var.get()
+            current_type = str(df[col].dtype)
+            current_type_label.config(text=f"Current type: {current_type}")
+        
+        col_var.trace('w', update_current_type)
+        update_current_type()
+        
+        # Target type selection
+        ttk.Label(dialog, text="Convert to:", font=('Arial', 10, 'bold')).pack(pady=(10,5))
+        
+        type_var = tk.StringVar(value="numeric")
+        type_frame = ttk.Frame(dialog)
+        type_frame.pack(pady=5)
+        
+        ttk.Radiobutton(type_frame, text="Numeric (float)", 
+                       variable=type_var, value="numeric").grid(row=0, column=0, sticky='w', padx=10)
+        ttk.Radiobutton(type_frame, text="Integer", 
+                       variable=type_var, value="integer").grid(row=1, column=0, sticky='w', padx=10)
+        ttk.Radiobutton(type_frame, text="String/Text", 
+                       variable=type_var, value="string").grid(row=2, column=0, sticky='w', padx=10)
+        ttk.Radiobutton(type_frame, text="DateTime", 
+                       variable=type_var, value="datetime").grid(row=0, column=1, sticky='w', padx=10)
+        ttk.Radiobutton(type_frame, text="Boolean (True/False)", 
+                       variable=type_var, value="boolean").grid(row=1, column=1, sticky='w', padx=10)
+        ttk.Radiobutton(type_frame, text="Category", 
+                       variable=type_var, value="category").grid(row=2, column=1, sticky='w', padx=10)
+        
+        # Error handling
+        ttk.Label(dialog, text="Error handling:", font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        
+        error_var = tk.StringVar(value="coerce")
+        error_frame = ttk.Frame(dialog)
+        error_frame.pack(pady=5)
+        
+        ttk.Radiobutton(error_frame, text="Coerce (set invalid to NaN)", 
+                       variable=error_var, value="coerce").pack(anchor='w', padx=50)
+        ttk.Radiobutton(error_frame, text="Raise error if any invalid", 
+                       variable=error_var, value="raise").pack(anchor='w', padx=50)
+        ttk.Radiobutton(error_frame, text="Ignore (keep original)", 
+                       variable=error_var, value="ignore").pack(anchor='w', padx=50)
+        
+        # DateTime format (conditional)
+        datetime_frame = ttk.LabelFrame(dialog, text="DateTime Format (optional)", padding=10)
+        datetime_frame.pack(pady=10, padx=20, fill=tk.X)
+        
+        ttk.Label(datetime_frame, text="Format string (e.g., '%Y-%m-%d', '%m/%d/%Y'):").pack(anchor='w')
+        format_var = tk.StringVar(value="")
+        ttk.Entry(datetime_frame, textvariable=format_var, width=40).pack(pady=5)
+        ttk.Label(datetime_frame, text="Leave blank for automatic detection", 
+                 font=('Arial', 8), foreground='gray').pack(anchor='w')
+        
+        # Preview area
+        preview_frame = ttk.LabelFrame(dialog, text="Preview", padding=10)
+        preview_frame.pack(pady=10, padx=20, fill=tk.BOTH, expand=True)
+        
+        preview_text = tk.Text(preview_frame, height=6, width=60, wrap=tk.WORD)
+        preview_text.pack(fill=tk.BOTH, expand=True)
+        preview_text.config(state=tk.DISABLED)
+        
+        result = [None]  # Use list to store result
+        
+        def preview_conversion():
+            """Show preview of conversion"""
+            col = col_var.get()
+            dtype = type_var.get()
+            error_handling = error_var.get()
+            
+            preview_text.config(state=tk.NORMAL)
+            preview_text.delete(1.0, tk.END)
+            
+            try:
+                # Test conversion on sample
+                sample = df[col].head(10).copy()
+                
+                if dtype == "numeric":
+                    converted = pd.to_numeric(sample, errors=error_handling)
+                elif dtype == "integer":
+                    converted = pd.to_numeric(sample, errors=error_handling)
+                    if error_handling != "ignore":
+                        converted = converted.astype('Int64')
+                elif dtype == "string":
+                    converted = sample.astype(str)
+                elif dtype == "datetime":
+                    fmt = format_var.get() if format_var.get() else None
+                    converted = pd.to_datetime(sample, format=fmt, errors=error_handling)
+                elif dtype == "boolean":
+                    converted = sample.astype(bool)
+                elif dtype == "category":
+                    converted = sample.astype('category')
+                
+                preview_text.insert(tk.END, "✅ Conversion Preview (first 10 rows):\n\n")
+                preview_text.insert(tk.END, f"Original → Converted\n")
+                preview_text.insert(tk.END, "-" * 50 + "\n")
+                
+                for orig, conv in zip(sample, converted):
+                    preview_text.insert(tk.END, f"{orig} → {conv}\n")
+                
+                preview_text.insert(tk.END, f"\n✓ Target type: {dtype}")
+                
+            except Exception as e:
+                preview_text.insert(tk.END, f"❌ Preview failed:\n{str(e)}\n\n")
+                preview_text.insert(tk.END, "Tip: Try changing error handling to 'coerce'")
+            
+            preview_text.config(state=tk.DISABLED)
+        
+        def convert():
+            """Perform actual conversion"""
+            col = col_var.get()
+            dtype = type_var.get()
+            error_handling = error_var.get()
+            
+            try:
+                old_dtype = str(df[col].dtype)
+                df_copy = df.copy()
+                
+                if dtype == "numeric":
+                    df_copy[col] = pd.to_numeric(df_copy[col], errors=error_handling)
+                elif dtype == "integer":
+                    df_copy[col] = pd.to_numeric(df_copy[col], errors=error_handling)
+                    if error_handling != "ignore":
+                        df_copy[col] = df_copy[col].astype('Int64')
+                elif dtype == "string":
+                    df_copy[col] = df_copy[col].astype(str)
+                elif dtype == "datetime":
+                    fmt = format_var.get() if format_var.get() else None
+                    df_copy[col] = pd.to_datetime(df_copy[col], format=fmt, errors=error_handling)
+                elif dtype == "boolean":
+                    df_copy[col] = df_copy[col].astype(bool)
+                elif dtype == "category":
+                    df_copy[col] = df_copy[col].astype('category')
+                
+                new_dtype = str(df_copy[col].dtype)
+                result[0] = df_copy
+                
+                # Output to text area
+                output = []
+                output.append("=" * 80)
+                output.append("CONVERT DATA TYPES - OPERATION COMPLETE")
+                output.append("=" * 80)
+                output.append("")
+                output.append(f"Column: {col}")
+                output.append(f"Old type: {old_dtype}")
+                output.append(f"New type: {new_dtype}")
+                output.append(f"Error handling: {error_handling}")
+                
+                if dtype == "datetime" and format_var.get():
+                    output.append(f"Date format used: {format_var.get()}")
+                
+                output.append("")
+                output.append("=" * 80)
+                output.append(f"SUCCESS: Column type converted successfully")
+                output.append(f"Total rows: {len(df_copy)}")
+                
+                output_callback("\n".join(output))
+                notebook_callback()
+                info_panel_callback()
+                status_callback(f"Converted {col} to {dtype}")
+                
+                messagebox.showinfo("Success", 
+                                  f"Column '{col}' converted successfully!\n\n"
+                                  f"Old type: {old_dtype}\n"
+                                  f"New type: {new_dtype}\n"
+                                  f"Error handling: {error_handling}")
+                dialog.destroy()
+                
+            except Exception as e:
+                messagebox.showerror("Error", f"Conversion failed:\n{str(e)}")
+        
+        # Action buttons
+        button_frame = ttk.Frame(dialog)
+        button_frame.pack(pady=15)
+        
+        ttk.Button(button_frame, text="Preview", command=preview_conversion).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Convert", command=convert, 
+                  style='Action.TButton').pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+        
+        # Wait for dialog to close
+        parent.wait_window(dialog)
+        return result[0]
