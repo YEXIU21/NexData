@@ -1741,51 +1741,25 @@ Would you like to recover this data?"""
         self.update_status("Dashboard generated")
     
     def column_analysis(self):
-        """Detailed analysis of a specific column"""
+        """Detailed analysis of a specific column - delegates to dialog"""
         if self.df is None:
             messagebox.showwarning("Warning", "No data loaded!")
             return
         
-        dialog = tk.Toplevel(self.root)
-        dialog.title("Column Analysis")
-        dialog.geometry("350x150")
-        
-        ttk.Label(dialog, text="Select column to analyze:", font=('Arial', 11)).pack(pady=10)
-        col_var = tk.StringVar(value=self.df.columns[0])
-        ttk.Combobox(dialog, textvariable=col_var, values=list(self.df.columns), state='readonly', width=30).pack(pady=5)
-        
-        def analyze():
-            col = col_var.get()
+        # Create callbacks
+        def output_callback(text):
             self.output_text.delete(1.0, tk.END)
-            self.output_text.insert(tk.END, f"=" * 80 + "\n")
-            self.output_text.insert(tk.END, f"COLUMN ANALYSIS: {col}\n")
-            self.output_text.insert(tk.END, "=" * 80 + "\n\n")
-            self.output_text.update_idletasks()  # Show header immediately
-            
-            self.output_text.insert(tk.END, f"Data Type: {self.df[col].dtype}\n")
-            self.output_text.insert(tk.END, f"Non-Null Count: {self.df[col].notna().sum():,}\n")
-            self.output_text.insert(tk.END, f"Null Count: {self.df[col].isna().sum():,}\n")
-            self.output_text.insert(tk.END, f"Unique Values: {self.df[col].nunique():,}\n\n")
-            self.output_text.update_idletasks()  # Show basic info
-            
-            if pd.api.types.is_numeric_dtype(self.df[col]):
-                self.output_text.insert(tk.END, "STATISTICS:\n")
-                self.output_text.insert(tk.END, f"  Mean: {self.df[col].mean():.2f}\n")
-                self.output_text.insert(tk.END, f"  Median: {self.df[col].median():.2f}\n")
-                self.output_text.insert(tk.END, f"  Std Dev: {self.df[col].std():.2f}\n")
-                self.output_text.insert(tk.END, f"  Min: {self.df[col].min():.2f}\n")
-                self.output_text.insert(tk.END, f"  Max: {self.df[col].max():.2f}\n\n")
-                self.output_text.update_idletasks()  # Show statistics
-            
-            self.output_text.insert(tk.END, "TOP 10 VALUES:\n")
-            value_counts = self.df[col].value_counts().head(10)
-            self.output_text.insert(tk.END, value_counts.to_string())
-            self.output_text.update_idletasks()  # Show value counts
-            
-            self.notebook.select(0)
-            dialog.destroy()
+            self.output_text.insert(tk.END, text)
+            self.output_text.update_idletasks()
         
-        ttk.Button(dialog, text="Analyze", command=analyze).pack(pady=15)
+        def notebook_callback():
+            self.notebook.select(0)
+        
+        # Use dialog factory
+        AnalysisDialogs.show_column_analysis_dialog(
+            self.root, self.df, output_callback, 
+            notebook_callback, self.update_status
+        )
     
     def filter_data(self):
         """Filter data interactively"""
@@ -1795,156 +1769,29 @@ Would you like to recover this data?"""
         messagebox.showinfo("Coming Soon", "Interactive filtering will be added in next version!")
     
     def sort_data(self):
-        """Sort data by column(s) with advanced options"""
+        """Sort data by column(s) - delegates to dialog"""
         if self.df is None:
             messagebox.showwarning("Warning", "No data loaded!")
             return
         
-        dialog = tk.Toplevel(self.root)
-        dialog.title("Sort Data")
-        dialog.geometry("500x450")
+        # Create callbacks
+        def output_callback(text):
+            self.output_text.delete(1.0, tk.END)
+            self.output_text.insert(tk.END, text)
+            self.output_text.update_idletasks()
         
-        ttk.Label(dialog, text="Sort Data - Advanced", 
-                 font=('Arial', 12, 'bold')).pack(pady=10)
+        def notebook_callback():
+            self.notebook.select(0)
         
-        # Primary sort
-        ttk.Label(dialog, text="Primary Sort Column:", 
-                 font=('Arial', 10, 'bold')).pack(pady=(10,5))
+        # Use dialog factory
+        sorted_df = AnalysisDialogs.show_sort_data_dialog(
+            self.root, self.df, self.analysis_service,
+            output_callback, notebook_callback,
+            self.update_info_panel, self.update_status
+        )
         
-        col1_frame = ttk.Frame(dialog)
-        col1_frame.pack(pady=5)
-        
-        col1_var = tk.StringVar(value=self.df.columns[0])
-        ttk.Combobox(col1_frame, textvariable=col1_var, 
-                    values=list(self.df.columns), state='readonly', width=25).pack(side=tk.LEFT, padx=5)
-        
-        order1_var = tk.StringVar(value="ascending")
-        ttk.Radiobutton(col1_frame, text="A→Z / 1→9", 
-                       variable=order1_var, value="ascending").pack(side=tk.LEFT, padx=5)
-        ttk.Radiobutton(col1_frame, text="Z→A / 9→1", 
-                       variable=order1_var, value="descending").pack(side=tk.LEFT, padx=5)
-        
-        # Secondary sort (optional)
-        ttk.Label(dialog, text="Secondary Sort Column (optional):", 
-                 font=('Arial', 10, 'bold')).pack(pady=(15,5))
-        
-        col2_frame = ttk.Frame(dialog)
-        col2_frame.pack(pady=5)
-        
-        col2_var = tk.StringVar(value="None")
-        col2_dropdown = ttk.Combobox(col2_frame, textvariable=col2_var, 
-                                     values=["None"] + list(self.df.columns), 
-                                     state='readonly', width=25)
-        col2_dropdown.pack(side=tk.LEFT, padx=5)
-        
-        order2_var = tk.StringVar(value="ascending")
-        ttk.Radiobutton(col2_frame, text="A→Z / 1→9", 
-                       variable=order2_var, value="ascending").pack(side=tk.LEFT, padx=5)
-        ttk.Radiobutton(col2_frame, text="Z→A / 9→1", 
-                       variable=order2_var, value="descending").pack(side=tk.LEFT, padx=5)
-        
-        # Tertiary sort (optional)
-        ttk.Label(dialog, text="Tertiary Sort Column (optional):", 
-                 font=('Arial', 10, 'bold')).pack(pady=(15,5))
-        
-        col3_frame = ttk.Frame(dialog)
-        col3_frame.pack(pady=5)
-        
-        col3_var = tk.StringVar(value="None")
-        col3_dropdown = ttk.Combobox(col3_frame, textvariable=col3_var, 
-                                     values=["None"] + list(self.df.columns), 
-                                     state='readonly', width=25)
-        col3_dropdown.pack(side=tk.LEFT, padx=5)
-        
-        order3_var = tk.StringVar(value="ascending")
-        ttk.Radiobutton(col3_frame, text="A→Z / 1→9", 
-                       variable=order3_var, value="ascending").pack(side=tk.LEFT, padx=5)
-        ttk.Radiobutton(col3_frame, text="Z→A / 9→1", 
-                       variable=order3_var, value="descending").pack(side=tk.LEFT, padx=5)
-        
-        # NA handling
-        ttk.Label(dialog, text="Handle Missing Values (NA):", 
-                 font=('Arial', 10, 'bold')).pack(pady=(15,5))
-        
-        na_var = tk.StringVar(value="last")
-        na_frame = ttk.Frame(dialog)
-        na_frame.pack(pady=5)
-        
-        ttk.Radiobutton(na_frame, text="Put at end", 
-                       variable=na_var, value="last").pack(side=tk.LEFT, padx=10)
-        ttk.Radiobutton(na_frame, text="Put at beginning", 
-                       variable=na_var, value="first").pack(side=tk.LEFT, padx=10)
-        
-        # Info label
-        ttk.Label(dialog, text="Tip: Multi-column sort applies in order (Primary → Secondary → Tertiary)", 
-                 font=('Arial', 8), foreground='gray').pack(pady=10)
-        
-        def sort():
-            try:
-                # Build column list and order list
-                cols = [col1_var.get()]
-                orders = [order1_var.get() == "ascending"]
-                
-                if col2_var.get() != "None":
-                    cols.append(col2_var.get())
-                    orders.append(order2_var.get() == "ascending")
-                
-                if col3_var.get() != "None":
-                    cols.append(col3_var.get())
-                    orders.append(order3_var.get() == "ascending")
-                
-                # Handle NA position
-                na_position = na_var.get()
-                
-                # Use analysis service
-                sorted_df = self.analysis_service.sort_data(
-                    self.df,
-                    cols,
-                    ascending=orders
-                )
-                self.df = sorted_df
-                
-                # Output to text area
-                self.output_text.delete(1.0, tk.END)
-                self.output_text.insert(tk.END, "=" * 80 + "\n")
-                self.output_text.insert(tk.END, "SORT DATA - OPERATION COMPLETE\n")
-                self.output_text.insert(tk.END, "=" * 80 + "\n\n")
-                
-                sort_desc = " → ".join(cols)
-                self.output_text.insert(tk.END, f"Sort order: {sort_desc}\n")
-                self.output_text.insert(tk.END, f"NA position: {na_position}\n\n")
-                
-                for i, col in enumerate(cols):
-                    order_text = "Ascending (A→Z / 1→9)" if orders[i] else "Descending (Z→A / 9→1)"
-                    self.output_text.insert(tk.END, f"  Level {i+1}: {col} - {order_text}\n")
-                
-                self.output_text.insert(tk.END, "\n" + "=" * 80 + "\n")
-                self.output_text.insert(tk.END, f"SUCCESS: Data sorted by {len(cols)} level(s)\n")
-                self.output_text.insert(tk.END, f"Total rows: {len(self.df)}\n")
-                self.output_text.update_idletasks()
-                self.notebook.select(0)  # Switch to Output tab
-                
-                # Update display
-                self.update_info_panel()
-                
-                # Status message
-                self.update_status(f"Sorted by: {sort_desc}")
-                messagebox.showinfo("Success", 
-                                  f"Data sorted successfully!\n\n"
-                                  f"Sort order: {sort_desc}\n"
-                                  f"NA position: {na_position}")
-                dialog.destroy()
-                
-            except Exception as e:
-                messagebox.showerror("Error", f"Sort failed:\n{str(e)}")
-        
-        # Action buttons
-        button_frame = ttk.Frame(dialog)
-        button_frame.pack(pady=20)
-        
-        ttk.Button(button_frame, text="Sort Data", command=sort, 
-                  style='Action.TButton').pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+        if sorted_df is not None:
+            self.df = sorted_df
     
     def convert_dtypes(self):
         """Convert column data types with advanced options"""
