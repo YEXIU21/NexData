@@ -657,3 +657,28 @@ class CleaningDialogs:
         ttk.Button(action_frame, text="Apply Fill", command=apply_fill, 
                   style='Action.TButton').pack(side=tk.LEFT, padx=5)
         ttk.Button(action_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+    
+    @staticmethod
+    def confirm_trim_all_columns(parent, df, cleaning_service, on_complete_callback):
+        """
+        Confirm and trim all text columns
+        
+        Args:
+            parent: Parent window
+            df: DataFrame to process
+            cleaning_service: CleaningService instance
+            on_complete_callback: Callback function(cleaned_df, count, status_msg)
+        """
+        text_cols = df.select_dtypes(include=['object']).columns
+        
+        if messagebox.askyesno("Confirm", 
+                              f"Trim whitespace from all {len(text_cols)} text columns?\n\n"
+                              f"This will remove leading and trailing spaces.",
+                              parent=parent):
+            try:
+                cleaned_df = cleaning_service.trim_all_columns(df)
+                status_msg = f"Trimmed {len(text_cols)} columns"
+                on_complete_callback(cleaned_df, len(text_cols), status_msg)
+                messagebox.showinfo("Success", f"Trimmed {len(text_cols)} columns!", parent=parent)
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to trim columns: {str(e)}", parent=parent)
