@@ -1059,118 +1059,39 @@ Would you like to recover this data?"""
         ttk.Button(action_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
     
     def handle_missing_values(self):
+        """Handle missing values - delegates to dialog"""
         if self.df is None:
             messagebox.showwarning("Warning", "No data loaded!")
             return
         
-        dialog = tk.Toplevel(self.root)
-        dialog.title("Handle Missing Values")
-        dialog.geometry("500x400")
-        
-        ttk.Label(dialog, text=f"Total Missing Values: {self.df.isnull().sum().sum()}", 
-                 font=('Arial', 12, 'bold')).pack(pady=10)
-        
-        # Column selection
-        ttk.Label(dialog, text="Select column (optional - leave for all):", 
-                 font=('Arial', 10)).pack(pady=5)
-        col_var = tk.StringVar(value="All Columns")
-        cols_list = ["All Columns"] + list(self.df.columns)
-        ttk.Combobox(dialog, textvariable=col_var, values=cols_list, 
-                     state='readonly', width=40).pack(pady=5)
-        
-        # Method selection
-        ttk.Label(dialog, text="Select method:", font=('Arial', 10, 'bold')).pack(pady=10)
-        method_var = tk.StringVar(value="drop")
-        ttk.Radiobutton(dialog, text="Drop rows with missing values", 
-                       variable=method_var, value="drop").pack(pady=3)
-        ttk.Radiobutton(dialog, text="Fill with mean (numeric only)", 
-                       variable=method_var, value="mean").pack(pady=3)
-        ttk.Radiobutton(dialog, text="Fill with median (numeric only)", 
-                       variable=method_var, value="median").pack(pady=3)
-        ttk.Radiobutton(dialog, text="Fill with custom value", 
-                       variable=method_var, value="custom").pack(pady=3)
-        ttk.Radiobutton(dialog, text="Forward fill", 
-                       variable=method_var, value="ffill").pack(pady=3)
-        
-        # Custom value input
-        ttk.Label(dialog, text="Custom value (if selected):", 
-                 font=('Arial', 10)).pack(pady=5)
-        custom_var = tk.StringVar(value="")
-        ttk.Entry(dialog, textvariable=custom_var, width=30).pack(pady=5)
-        
-        def apply():
-            method = method_var.get()
-            selected_col = col_var.get()
+        def on_complete(cleaned_df, method, selected_col, status_msg, custom_val=None):
+            """Callback when missing values handled"""
+            self.df = cleaned_df
+            self.update_autosave_data()
             
-            try:
-                if selected_col == "All Columns":
-                    # Apply to all columns
-                    if method == "drop":
-                        self.df = self.df.dropna()
-                    elif method == "mean":
-                        self.df.fillna(self.df.mean(numeric_only=True), inplace=True)
-                    elif method == "median":
-                        self.df.fillna(self.df.median(numeric_only=True), inplace=True)
-                    elif method == "custom":
-                        custom_val = custom_var.get()
-                        if custom_val == "":
-                            messagebox.showwarning("Warning", "Please enter a custom value!")
-                            return
-                        self.df.fillna(custom_val, inplace=True)
-                    elif method == "ffill":
-                        self.df.fillna(method='ffill', inplace=True)
-                else:
-                    # Apply to specific column
-                    if method == "drop":
-                        self.df = self.df.dropna(subset=[selected_col])
-                    elif method == "mean":
-                        if pd.api.types.is_numeric_dtype(self.df[selected_col]):
-                            self.df[selected_col].fillna(self.df[selected_col].mean(), inplace=True)
-                        else:
-                            messagebox.showwarning("Warning", f"{selected_col} is not numeric!")
-                            return
-                    elif method == "median":
-                        if pd.api.types.is_numeric_dtype(self.df[selected_col]):
-                            self.df[selected_col].fillna(self.df[selected_col].median(), inplace=True)
-                        else:
-                            messagebox.showwarning("Warning", f"{selected_col} is not numeric!")
-                            return
-                    elif method == "custom":
-                        custom_val = custom_var.get()
-                        if custom_val == "":
-                            messagebox.showwarning("Warning", "Please enter a custom value!")
-                            return
-                        self.df[selected_col].fillna(custom_val, inplace=True)
-                    elif method == "ffill":
-                        self.df[selected_col].fillna(method='ffill', inplace=True)
-                
-                # Update autosave after modifications
-                self.update_autosave_data()
-                
-                # Output to text area
-                self.output_text.delete(1.0, tk.END)
-                self.output_text.insert(tk.END, "=" * 80 + "\n")
-                self.output_text.insert(tk.END, "HANDLE MISSING VALUES - OPERATION COMPLETE\n")
-                self.output_text.insert(tk.END, "=" * 80 + "\n\n")
-                self.output_text.insert(tk.END, f"Method applied: {method.upper()}\n")
-                self.output_text.insert(tk.END, f"Target: {selected_col}\n")
-                if method == "custom":
-                    self.output_text.insert(tk.END, f"Custom value: {custom_var.get()}\n")
-                self.output_text.insert(tk.END, f"\n✓ Current missing values in dataset: {self.df.isnull().sum().sum()}\n")
-                self.output_text.insert(tk.END, f"✓ Total rows: {len(self.df)}\n\n")
-                self.output_text.insert(tk.END, "=" * 80 + "\n")
-                self.output_text.insert(tk.END, f"SUCCESS: Missing values handled using {method} method\n")
-                self.output_text.update_idletasks()
-                self.notebook.select(0)  # Switch to Output tab
-                
-                self.update_info_panel()
-                self.update_status(f"Handled missing values: {method}")
-                messagebox.showinfo("Success", f"Applied {method} method to {selected_col}")
-                dialog.destroy()
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to handle missing values:\n{str(e)}")
+            # Output to text area
+            self.output_text.delete(1.0, tk.END)
+            self.output_text.insert(tk.END, "=" * 80 + "\n")
+            self.output_text.insert(tk.END, "HANDLE MISSING VALUES - OPERATION COMPLETE\n")
+            self.output_text.insert(tk.END, "=" * 80 + "\n\n")
+            self.output_text.insert(tk.END, f"Method applied: {method.upper()}\n")
+            self.output_text.insert(tk.END, f"Target: {selected_col}\n")
+            if custom_val:
+                self.output_text.insert(tk.END, f"Custom value: {custom_val}\n")
+            self.output_text.insert(tk.END, f"\n✓ Current missing values in dataset: {self.df.isnull().sum().sum()}\n")
+            self.output_text.insert(tk.END, f"✓ Total rows: {len(self.df)}\n\n")
+            self.output_text.insert(tk.END, "=" * 80 + "\n")
+            self.output_text.insert(tk.END, f"SUCCESS: Missing values handled using {method} method\n")
+            self.output_text.update_idletasks()
+            self.notebook.select(0)
+            
+            self.update_info_panel()
+            self.update_status(status_msg)
         
-        ttk.Button(dialog, text="Apply", command=apply).pack(pady=15)
+        # Use dialog factory
+        CleaningDialogs.show_handle_missing_dialog(
+            self.root, self.df, on_complete
+        )
     
     def remove_outliers(self):
         if self.df is None:
