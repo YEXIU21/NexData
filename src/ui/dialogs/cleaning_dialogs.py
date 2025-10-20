@@ -1518,6 +1518,320 @@ class CleaningDialogs:
         ttk.Button(btn_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
     
     @staticmethod
+    def show_clean_order_ids_dialog(parent, df, on_complete_callback):
+        """
+        Show clean order IDs dialog - removes letter suffixes, whitespace, etc.
+        
+        Args:
+            parent: Parent window
+            df: DataFrame to process
+            on_complete_callback: Callback function(cleaned_df, col, affected_count, status_msg, output_msg)
+        """
+        import re
+        
+        # Create dialog
+        dialog = tk.Toplevel(parent)
+        dialog.title("Clean Order IDs")
+        dialog.geometry("600x550")
+        
+        ttk.Label(dialog, text="Clean Order IDs - Remove Letter Suffixes", 
+                 font=('Arial', 12, 'bold')).pack(pady=15)
+        
+        # Instructions
+        info_frame = ttk.LabelFrame(dialog, text="What This Does", padding=10)
+        info_frame.pack(pady=10, padx=20, fill=tk.X)
+        ttk.Label(info_frame, text="• Removes letter suffixes from Order IDs (e.g., SH10031B → SH10031)\n"
+                                   "• Useful for cleaning test orders or accidental letter additions\n"
+                                   "• Preserves the base ID number",
+                 justify=tk.LEFT).pack()
+        
+        # Column selection
+        ttk.Label(dialog, text="Select Order ID column:", 
+                 font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        
+        col_var = tk.StringVar()
+        # Try to auto-detect order_id column
+        order_cols = [col for col in df.columns if 'id' in col.lower() and 'order' in col.lower()]
+        if order_cols:
+            col_var.set(order_cols[0])
+        elif len(df.columns) > 0:
+            col_var.set(df.columns[0])
+        
+        col_dropdown = ttk.Combobox(dialog, textvariable=col_var, 
+                                    values=list(df.columns), state='readonly', width=35)
+        col_dropdown.pack(pady=5)
+        
+        # Pattern options
+        ttk.Label(dialog, text="Cleaning pattern:", 
+                 font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        
+        pattern_var = tk.StringVar(value="all_letters")
+        ttk.Radiobutton(dialog, text="Remove all letters at end (e.g., SH10031B → SH10031)", 
+                       variable=pattern_var, value="all_letters").pack(pady=2, anchor='w', padx=50)
+        ttk.Radiobutton(dialog, text="Remove single letter only (e.g., SH10031B → SH10031, but keep SH10ABC)", 
+                       variable=pattern_var, value="single_letter").pack(pady=2, anchor='w', padx=50)
+        ttk.Radiobutton(dialog, text="Remove numbers at end (e.g., SH10031B1 → SH10031B)", 
+                       variable=pattern_var, value="numbers_only").pack(pady=2, anchor='w', padx=50)
+        ttk.Radiobutton(dialog, text="Clean whitespace (trim + remove double spaces: ' SH  10031 ' → 'SH 10031')", 
+                       variable=pattern_var, value="whitespace").pack(pady=2, anchor='w', padx=50)
+        ttk.Radiobutton(dialog, text="Custom pattern (specify what to remove)", 
+                       variable=pattern_var, value="custom").pack(pady=2, anchor='w', padx=50)
+        
+        # Position selector
+        ttk.Label(dialog, text="Remove from:", 
+                 font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        
+        position_var = tk.StringVar(value="end")
+        position_frame = ttk.Frame(dialog)
+        position_frame.pack(pady=5, padx=50)
+        ttk.Radiobutton(position_frame, text="End (e.g., SH10031B1 → SH10031B)", 
+                       variable=position_var, value="end").pack(side=tk.LEFT, padx=10)
+        ttk.Radiobutton(position_frame, text="Start (e.g., 1SH10031B → SH10031B)", 
+                       variable=position_var, value="start").pack(side=tk.LEFT, padx=10)
+        ttk.Radiobutton(position_frame, text="Both sides", 
+                       variable=position_var, value="both").pack(side=tk.LEFT, padx=10)
+        
+        # Custom pattern input
+        custom_frame = ttk.Frame(dialog)
+        custom_frame.pack(pady=5, padx=50, fill=tk.X)
+        ttk.Label(custom_frame, text="Custom pattern:").pack(side=tk.LEFT, padx=5)
+        custom_pattern_var = tk.StringVar()
+        custom_entry = ttk.Entry(custom_frame, textvariable=custom_pattern_var, width=20)
+        custom_entry.pack(side=tk.LEFT, padx=5)
+        ttk.Label(custom_frame, text="(e.g., '1' or '[0-9]+' for numbers)", 
+                 font=('Arial', 8), foreground='gray').pack(side=tk.LEFT)
+        
+        # Preview area
+        preview_frame = ttk.LabelFrame(dialog, text="Preview Changes", padding=10)
+        preview_frame.pack(pady=15, padx=20, fill=tk.BOTH, expand=True)
+        
+        preview_text = tk.Text(preview_frame, height=10, width=60, wrap=tk.NONE)
+        preview_scroll = ttk.Scrollbar(preview_frame, orient=tk.VERTICAL, command=preview_text.yview)
+        preview_text.config(yscrollcommand=preview_scroll.set)
+        preview_text.grid(row=0, column=0, sticky='nsew')
+        preview_scroll.grid(row=0, column=1, sticky='ns')
+        preview_frame.grid_rowconfigure(0, weight=1)
+        preview_frame.grid_columnconfigure(0, weight=1)
+        preview_text.config(state=tk.DISABLED)
+        
+        def show_preview():
+            """Show preview of changes"""
+            col = col_var.get()
+            if not col:
+                messagebox.showwarning("Warning", "Please select a column!")
+                return
+            
+            pattern = pattern_var.get()
+            preview_text.config(state=tk.NORMAL)
+            preview_text.delete(1.0, tk.END)
+            
+            try:
+                position = position_var.get()
+                
+                # Special handling for whitespace cleaning
+                if pattern == "whitespace":
+                    whitespace_issues = df[col].astype(str)
+                    needs_cleaning = (whitespace_issues != whitespace_issues.str.strip()) | \
+                                   (whitespace_issues.str.contains(r'\s{2,}', regex=True, na=False))
+                    affected = df[needs_cleaning]
+                    
+                    if len(affected) == 0:
+                        preview_text.insert(tk.END, "✓ No whitespace issues found\n")
+                        preview_text.insert(tk.END, "All Order IDs are already clean!\n")
+                    else:
+                        preview_text.insert(tk.END, f"📋 Found {len(affected)} ID(s) with whitespace issues:\n\n")
+                        preview_text.insert(tk.END, f"{'Original ID':<25} → {'Cleaned ID':<25}\n")
+                        preview_text.insert(tk.END, "=" * 55 + "\n")
+                        
+                        for idx in affected.index[:20]:
+                            original_id = str(df.loc[idx, col])
+                            cleaned_id = re.sub(r'\s+', ' ', original_id).strip()
+                            preview_text.insert(tk.END, f"'{original_id}'<{len(original_id):<3} → '{cleaned_id}'<{len(cleaned_id):<3}\n")
+                        
+                        if len(affected) > 20:
+                            preview_text.insert(tk.END, f"\n... and {len(affected) - 20} more\n")
+                else:
+                    # Determine base pattern for letter/number removal
+                    if pattern == "all_letters":
+                        base_pattern = r'[A-Z]+'
+                        pattern_desc = "letters"
+                    elif pattern == "single_letter":
+                        base_pattern = r'[A-Z]'
+                        pattern_desc = "single letter"
+                    elif pattern == "numbers_only":
+                        base_pattern = r'[0-9]+'
+                        pattern_desc = "numbers"
+                    elif pattern == "custom":
+                        custom_pat = custom_pattern_var.get()
+                        if not custom_pat:
+                            preview_text.insert(tk.END, "⚠️ Please enter a custom pattern to remove\n")
+                            preview_text.config(state=tk.DISABLED)
+                            return
+                        base_pattern = custom_pat
+                        pattern_desc = f"custom pattern '{custom_pat}'"
+                    
+                    # Apply position anchors
+                    if position == "end":
+                        regex_pattern = base_pattern + '$'
+                        position_desc = "at end"
+                    elif position == "start":
+                        regex_pattern = '^' + base_pattern
+                        position_desc = "at start"
+                    else:  # both
+                        regex_pattern = f'^{base_pattern}|{base_pattern}$'
+                        position_desc = "at start or end"
+                    
+                    affected = df[df[col].astype(str).str.contains(regex_pattern, regex=True, na=False)]
+                    
+                    if len(affected) == 0:
+                        preview_text.insert(tk.END, f"✓ No IDs found with {pattern_desc} {position_desc}\n")
+                        preview_text.insert(tk.END, "All Order IDs are already clean!\n")
+                    else:
+                        preview_text.insert(tk.END, f"📋 Found {len(affected)} ID(s) with {pattern_desc} {position_desc}:\n\n")
+                        preview_text.insert(tk.END, f"{'Original ID':<20} → {'Cleaned ID':<20}\n")
+                        preview_text.insert(tk.END, "=" * 45 + "\n")
+                        
+                        for original_id in affected[col].head(20):
+                            cleaned_id = str(original_id).strip()
+                            cleaned_id = re.sub(regex_pattern, '', cleaned_id)
+                            preview_text.insert(tk.END, f"{str(original_id):<20} → {cleaned_id:<20}\n")
+                    
+                    if len(affected) > 20:
+                        preview_text.insert(tk.END, f"\n... and {len(affected) - 20} more\n")
+                
+            except Exception as e:
+                preview_text.insert(tk.END, f"❌ Error: {str(e)}")
+            
+            preview_text.config(state=tk.DISABLED)
+        
+        def apply_cleaning():
+            """Apply the cleaning"""
+            col = col_var.get()
+            if not col:
+                messagebox.showwarning("Warning", "Please select a column!")
+                return
+            
+            pattern = pattern_var.get()
+            before_count = len(df)
+            result_df = df.copy()
+            
+            try:
+                position = position_var.get()
+                
+                # Special handling for whitespace cleaning
+                if pattern == "whitespace":
+                    whitespace_issues = result_df[col].astype(str)
+                    needs_cleaning = (whitespace_issues != whitespace_issues.str.strip()) | \
+                                   (whitespace_issues.str.contains(r'\s{2,}', regex=True, na=False))
+                    affected_count = needs_cleaning.sum()
+                    
+                    result_df[col] = result_df[col].astype(str).str.replace(r'\s+', ' ', regex=True).str.strip()
+                    
+                    pattern_desc = "whitespace (trim + collapse multiple spaces)"
+                    position_desc = ""
+                else:
+                    # Determine base pattern for letter/number removal
+                    if pattern == "all_letters":
+                        base_pattern = r'[A-Z]+'
+                        pattern_desc = "letters"
+                    elif pattern == "single_letter":
+                        base_pattern = r'[A-Z]'
+                        pattern_desc = "single letter"
+                    elif pattern == "numbers_only":
+                        base_pattern = r'[0-9]+'
+                        pattern_desc = "numbers"
+                    elif pattern == "custom":
+                        custom_pat = custom_pattern_var.get()
+                        if not custom_pat:
+                            messagebox.showwarning("Warning", "Please enter a custom pattern!")
+                            return
+                        base_pattern = custom_pat
+                        pattern_desc = f"custom pattern '{custom_pat}'"
+                    
+                    # Apply position anchors
+                    if position == "end":
+                        regex_pattern = base_pattern + '$'
+                        position_desc = "at end"
+                    elif position == "start":
+                        regex_pattern = '^' + base_pattern
+                        position_desc = "at start"
+                    else:  # both
+                        regex_pattern = f'^{base_pattern}|{base_pattern}$'
+                        position_desc = "at start or end"
+                    
+                    # Count affected rows before cleaning
+                    affected = result_df[result_df[col].astype(str).str.contains(regex_pattern, regex=True, na=False)]
+                    affected_count = len(affected)
+                    
+                    # Safety check: Detect if any IDs would become empty
+                    test_cleaned = affected[col].astype(str).str.replace(regex_pattern, '', regex=True)
+                    empty_after_clean = test_cleaned[test_cleaned.str.strip() == '']
+                    
+                    if len(empty_after_clean) > 0:
+                        warning_msg = f"⚠️ WARNING: This pattern would COMPLETELY REMOVE {len(empty_after_clean)} Order ID(s)!\n\n"
+                        warning_msg += "These IDs would become empty:\n"
+                        empty_indices = empty_after_clean.index.tolist()[:10]
+                        for idx in empty_indices:
+                            original_value = result_df.loc[idx, col]
+                            warning_msg += f"  • {original_value}\n"
+                        if len(empty_after_clean) > 10:
+                            warning_msg += f"  ... and {len(empty_after_clean) - 10} more\n"
+                        warning_msg += f"\nThis might DELETE your entire Order ID column!\n\n"
+                        warning_msg += "Are you SURE you want to proceed?\n"
+                        warning_msg += "(Hint: Try a different pattern or position)"
+                        
+                        confirm = messagebox.askyesno("⚠️ Destructive Operation Warning", 
+                                                     warning_msg, 
+                                                     icon='warning',
+                                                     default='no')
+                        if not confirm:
+                            return
+                    
+                    # Apply cleaning
+                    result_df[col] = result_df[col].astype(str).str.replace(regex_pattern, '', regex=True)
+                
+                # Build output message
+                output_msg = "=" * 80 + "\n"
+                output_msg += "CLEAN ORDER IDs - OPERATION COMPLETE\n"
+                output_msg += "=" * 80 + "\n\n"
+                output_msg += f"Column cleaned: {col}\n"
+                output_msg += f"Removed: {pattern_desc} {position_desc}\n\n"
+                output_msg += f"✓ Total rows: {before_count}\n"
+                output_msg += f"✓ IDs cleaned: {affected_count}\n\n"
+                output_msg += "=" * 80 + "\n"
+                
+                if affected_count > 0:
+                    output_msg += f"SUCCESS: Cleaned {affected_count} Order ID(s)\n"
+                    output_msg += "Examples: SH10031B → SH10031, SH10005A → SH10005\n"
+                else:
+                    output_msg += "INFO: No Order IDs needed cleaning\n"
+                
+                # Build status message
+                status_msg = f"Cleaned {affected_count} Order IDs"
+                
+                # Call callback
+                on_complete_callback(result_df, col, affected_count, status_msg, output_msg)
+                
+                messagebox.showinfo("Success", 
+                                  f"Order IDs cleaned successfully!\n\n"
+                                  f"Column: {col}\n"
+                                  f"IDs cleaned: {affected_count}")
+                dialog.destroy()
+                
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to clean Order IDs:\n{str(e)}")
+        
+        # Action buttons
+        button_frame = ttk.Frame(dialog)
+        button_frame.pack(pady=15)
+        
+        ttk.Button(button_frame, text="Preview Changes", 
+                  command=show_preview).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Apply Cleaning", command=apply_cleaning, 
+                  style='Action.TButton').pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+    
+    @staticmethod
     def confirm_trim_all_columns(parent, df, cleaning_service, on_complete_callback):
         """
         Confirm and trim all text columns
