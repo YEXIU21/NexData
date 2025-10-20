@@ -336,3 +336,154 @@ class VisualizationDialogs:
         ttk.Button(button_frame, text="Create Plot", command=plot, 
                   style='Action.TButton').pack(side=tk.LEFT, padx=5)
         ttk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+    
+    @staticmethod
+    def show_scatter_plot_dialog(parent, df, create_plot_callback):
+        """
+        Show scatter plot creation dialog
+        
+        Args:
+            parent: Parent window
+            df: DataFrame to visualize
+            create_plot_callback: Callback function(plot_func)
+        """
+        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+        if len(numeric_cols) < 2:
+            messagebox.showwarning("Warning", "Need at least 2 numeric columns!")
+            return
+        
+        dialog = tk.Toplevel(parent)
+        dialog.title("Create Scatter Plot")
+        dialog.geometry("520x550")
+        
+        ttk.Label(dialog, text="Create Scatter Plot - Advanced", 
+                 font=('Arial', 12, 'bold')).pack(pady=10)
+        
+        # X and Y axis selection
+        axis_frame = ttk.Frame(dialog)
+        axis_frame.pack(pady=10, padx=20, fill=tk.X)
+        
+        ttk.Label(axis_frame, text="X axis:", font=('Arial', 10, 'bold')).grid(row=0, column=0, sticky='w', pady=5)
+        x_var = tk.StringVar(value=numeric_cols[0])
+        ttk.Combobox(axis_frame, textvariable=x_var, values=numeric_cols, 
+                    state='readonly', width=30).grid(row=0, column=1, padx=10)
+        
+        ttk.Label(axis_frame, text="Y axis:", font=('Arial', 10, 'bold')).grid(row=1, column=0, sticky='w', pady=5)
+        y_var = tk.StringVar(value=numeric_cols[1] if len(numeric_cols) > 1 else numeric_cols[0])
+        ttk.Combobox(axis_frame, textvariable=y_var, values=numeric_cols, 
+                    state='readonly', width=30).grid(row=1, column=1, padx=10)
+        
+        # Color by category
+        ttk.Label(dialog, text="Color by category (optional):", 
+                 font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        color_by_var = tk.StringVar(value="None")
+        ttk.Combobox(dialog, textvariable=color_by_var, 
+                    values=["None"] + list(df.columns), 
+                    state='readonly', width=35).pack(pady=5)
+        
+        # Marker customization
+        ttk.Label(dialog, text="Marker style:", font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        
+        marker_frame = ttk.Frame(dialog)
+        marker_frame.pack(pady=5)
+        
+        marker_var = tk.StringVar(value="o")
+        markers = [("Circle", "o"), ("Square", "s"), ("Triangle", "^"), 
+                   ("Diamond", "D"), ("Star", "*"), ("Plus", "+")]
+        
+        for i, (name, marker) in enumerate(markers):
+            ttk.Radiobutton(marker_frame, text=name, variable=marker_var, 
+                           value=marker).grid(row=i//3, column=i%3, padx=15, pady=2)
+        
+        # Size and transparency
+        size_frame = ttk.Frame(dialog)
+        size_frame.pack(pady=10)
+        
+        ttk.Label(size_frame, text="Marker size:", font=('Arial', 9)).grid(row=0, column=0, padx=5)
+        size_var = tk.IntVar(value=50)
+        ttk.Spinbox(size_frame, from_=10, to=200, textvariable=size_var, width=10).grid(row=0, column=1, padx=5)
+        
+        ttk.Label(size_frame, text="Transparency:", font=('Arial', 9)).grid(row=0, column=2, padx=5)
+        alpha_var = tk.DoubleVar(value=0.6)
+        ttk.Spinbox(size_frame, from_=0.1, to=1.0, increment=0.1, textvariable=alpha_var, width=10).grid(row=0, column=3, padx=5)
+        
+        # Display options
+        ttk.Label(dialog, text="Display options:", font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        
+        show_trend_var = tk.BooleanVar(value=False)
+        show_correlation_var = tk.BooleanVar(value=False)
+        
+        opt_frame = ttk.Frame(dialog)
+        opt_frame.pack(pady=5)
+        
+        ttk.Checkbutton(opt_frame, text="Show trend line", 
+                       variable=show_trend_var).pack(anchor='w', padx=50)
+        ttk.Checkbutton(opt_frame, text="Show correlation coefficient", 
+                       variable=show_correlation_var).pack(anchor='w', padx=50)
+        
+        # Title
+        ttk.Label(dialog, text="Chart title (optional):", font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        title_var = tk.StringVar(value="")
+        ttk.Entry(dialog, textvariable=title_var, width=40).pack(pady=5)
+        
+        def plot():
+            x_col = x_var.get()
+            y_col = y_var.get()
+            color_by = color_by_var.get()
+            
+            try:
+                chart_title = title_var.get() if title_var.get() else f'{y_col} vs {x_col}'
+                marker = marker_var.get()
+                size = size_var.get()
+                alpha = alpha_var.get()
+                
+                def plot_func(fig, ax):
+                    # Prepare data
+                    if color_by != "None":
+                        # Color by category
+                        categories = df[color_by].unique()
+                        for cat in categories:
+                            mask = df[color_by] == cat
+                            ax.scatter(df[mask][x_col], df[mask][y_col], 
+                                      label=cat, alpha=alpha, s=size, marker=marker)
+                        ax.legend()
+                    else:
+                        # Single color
+                        ax.scatter(df[x_col], df[y_col], 
+                                  alpha=alpha, s=size, marker=marker, color='steelblue')
+                    
+                    # Trend line
+                    if show_trend_var.get():
+                        x_data = df[x_col].dropna()
+                        y_data = df[y_col].dropna()
+                        z = np.polyfit(x_data, y_data, 1)
+                        p = np.poly1d(z)
+                        ax.plot(x_data, p(x_data), "r--", linewidth=2, label=f'Trend: y={z[0]:.2f}x+{z[1]:.2f}')
+                        ax.legend()
+                    
+                    # Correlation coefficient
+                    if show_correlation_var.get():
+                        corr = df[[x_col, y_col]].corr().iloc[0, 1]
+                        ax.text(0.05, 0.95, f'Correlation: {corr:.3f}', 
+                               transform=ax.transAxes, fontsize=10, 
+                               verticalalignment='top', 
+                               bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+                    
+                    ax.set_title(chart_title, fontsize=14, fontweight='bold')
+                    ax.set_xlabel(x_col, fontsize=11)
+                    ax.set_ylabel(y_col, fontsize=11)
+                    ax.grid(True, alpha=0.3)
+                
+                create_plot_callback(plot_func)
+                dialog.destroy()
+                
+            except Exception as e:
+                messagebox.showerror("Error", f"Scatter plot creation failed:\n{str(e)}")
+        
+        # Action buttons
+        button_frame = ttk.Frame(dialog)
+        button_frame.pack(pady=20)
+        
+        ttk.Button(button_frame, text="Create Plot", command=plot, 
+                  style='Action.TButton').pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
