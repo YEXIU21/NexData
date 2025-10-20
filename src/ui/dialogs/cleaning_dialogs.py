@@ -1096,6 +1096,100 @@ class CleaningDialogs:
         ttk.Button(btn_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
     
     @staticmethod
+    def show_standardize_dates_dialog(parent, df, cleaning_service, on_complete_callback):
+        """
+        Show standardize dates dialog
+        
+        Args:
+            parent: Parent window
+            df: DataFrame to process
+            cleaning_service: CleaningService instance
+            on_complete_callback: Callback function(cleaned_df, col, fmt, status_msg)
+        """
+        import tkinter.scrolledtext as scrolledtext
+        import pandas as pd
+        
+        dialog = tk.Toplevel(parent)
+        dialog.title("Standardize Dates")
+        dialog.geometry("500x450")
+        
+        ttk.Label(dialog, text="Standardize Date Format", font=('Arial', 12, 'bold')).pack(pady=15)
+        
+        # Column selection
+        ttk.Label(dialog, text="Select date column:", font=('Arial', 10, 'bold')).pack(pady=5)
+        col_var = tk.StringVar()
+        col_combo = ttk.Combobox(dialog, textvariable=col_var, values=list(df.columns), state='readonly', width=25)
+        col_combo.pack(pady=5)
+        if len(df.columns) > 0:
+            col_combo.current(0)
+        
+        # Format selection
+        ttk.Label(dialog, text="Target format:", font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        format_var = tk.StringVar(value="%Y-%m-%d")
+        ttk.Radiobutton(dialog, text="YYYY-MM-DD (2025-01-05)", variable=format_var, value="%Y-%m-%d").pack(anchor='w', padx=50)
+        ttk.Radiobutton(dialog, text="MM/DD/YYYY (01/05/2025)", variable=format_var, value="%m/%d/%Y").pack(anchor='w', padx=50)
+        ttk.Radiobutton(dialog, text="DD/MM/YYYY (05/01/2025)", variable=format_var, value="%d/%m/%Y").pack(anchor='w', padx=50)
+        ttk.Radiobutton(dialog, text="Month DD, YYYY (January 05, 2025)", variable=format_var, value="%B %d, %Y").pack(anchor='w', padx=50)
+        
+        # Preview area
+        preview_text = scrolledtext.ScrolledText(dialog, height=8, width=55)
+        preview_text.pack(pady=10, padx=20)
+        preview_text.config(state=tk.DISABLED)
+        
+        def show_preview():
+            col = col_var.get()
+            fmt = format_var.get()
+            
+            preview_text.config(state=tk.NORMAL)
+            preview_text.delete(1.0, tk.END)
+            
+            try:
+                sample = pd.to_datetime(df[col], errors='coerce').head(5)
+                preview_text.insert(tk.END, "Preview (first 5 values):\n\n")
+                for val in sample:
+                    if pd.notna(val):
+                        preview_text.insert(tk.END, f"{val} → {val.strftime(fmt)}\n")
+                    else:
+                        preview_text.insert(tk.END, "[invalid date]\n")
+            except Exception as e:
+                preview_text.insert(tk.END, f"Error: {str(e)}")
+                
+            preview_text.config(state=tk.DISABLED)
+        
+        def apply_format():
+            col = col_var.get()
+            fmt = format_var.get()
+            
+            try:
+                # Use cleaning service
+                cleaned_df = cleaning_service.standardize_dates(
+                    df,
+                    col,
+                    date_format=fmt
+                )
+                
+                # Build status message
+                status_msg = f"Standardized dates in {col}"
+                
+                # Call callback
+                on_complete_callback(cleaned_df, col, fmt, status_msg)
+                
+                messagebox.showinfo("Success", f"Dates in '{col}' standardized to {fmt}!")
+                dialog.destroy()
+                
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to standardize dates: {str(e)}")
+        
+        # Action buttons
+        btn_frame = ttk.Frame(dialog)
+        btn_frame.pack(pady=10)
+        
+        ttk.Button(btn_frame, text="Preview", command=show_preview).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Apply", command=apply_format, 
+                  style='Action.TButton').pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+    
+    @staticmethod
     def confirm_trim_all_columns(parent, df, cleaning_service, on_complete_callback):
         """
         Confirm and trim all text columns
