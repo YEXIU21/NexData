@@ -1992,105 +1992,26 @@ Would you like to recover this data?"""
         ttk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
     
     def groupby_analysis(self):
-        """Group by analysis"""
+        """Group by analysis - delegates to dialog"""
         if self.df is None:
             messagebox.showwarning("Warning", "No data loaded!")
             return
         
-        dialog = tk.Toplevel(self.root)
-        dialog.title("Group By Analysis")
-        dialog.geometry("450x400")
+        # Create callbacks
+        def output_callback(text):
+            self.output_text.delete(1.0, tk.END)
+            self.output_text.insert(tk.END, text)
+            self.output_text.update_idletasks()
         
-        # Group by column
-        ttk.Label(dialog, text="Group by column:", font=('Arial', 11, 'bold')).pack(pady=(10,5))
-        groupby_var = tk.StringVar(value=self.df.columns[0])
-        ttk.Combobox(dialog, textvariable=groupby_var, values=list(self.df.columns), 
-                     state='readonly', width=35).pack(pady=5)
+        def notebook_callback():
+            self.notebook.select(0)
         
-        # Aggregate column
-        ttk.Label(dialog, text="Aggregate column:", font=('Arial', 11, 'bold')).pack(pady=(15,5))
-        agg_col_var = tk.StringVar(value=self.df.columns[0])
-        ttk.Combobox(dialog, textvariable=agg_col_var, values=list(self.df.columns), 
-                     state='readonly', width=35).pack(pady=5)
-        
-        # Aggregation function
-        ttk.Label(dialog, text="Aggregation function:", font=('Arial', 11, 'bold')).pack(pady=(15,5))
-        agg_func_var = tk.StringVar(value="sum")
-        func_frame = ttk.Frame(dialog)
-        func_frame.pack(pady=5)
-        
-        functions = [
-            ("Sum", "sum"),
-            ("Mean", "mean"),
-            ("Count", "count"),
-            ("Min", "min"),
-            ("Max", "max"),
-            ("Median", "median")
-        ]
-        
-        for i, (text, value) in enumerate(functions):
-            ttk.Radiobutton(func_frame, text=text, variable=agg_func_var, 
-                           value=value).grid(row=i//3, column=i%3, padx=10, pady=2)
-        
-        # Sort order
-        ttk.Label(dialog, text="Sort results:", font=('Arial', 11, 'bold')).pack(pady=(15,5))
-        sort_var = tk.StringVar(value="descending")
-        sort_frame = ttk.Frame(dialog)
-        sort_frame.pack(pady=5)
-        ttk.Radiobutton(sort_frame, text="Descending (High to Low)", 
-                       variable=sort_var, value="descending").pack(side=tk.LEFT, padx=10)
-        ttk.Radiobutton(sort_frame, text="Ascending (Low to High)", 
-                       variable=sort_var, value="ascending").pack(side=tk.LEFT, padx=10)
-        
-        def perform_groupby():
-            try:
-                group_col = groupby_var.get()
-                agg_col = agg_col_var.get()
-                agg_func = agg_func_var.get()
-                ascending = (sort_var.get() == "ascending")
-                
-                # Perform groupby
-                if agg_func == "count":
-                    result = self.df.groupby(group_col)[agg_col].count()
-                elif agg_func == "sum":
-                    result = self.df.groupby(group_col)[agg_col].sum()
-                elif agg_func == "mean":
-                    result = self.df.groupby(group_col)[agg_col].mean()
-                elif agg_func == "median":
-                    result = self.df.groupby(group_col)[agg_col].median()
-                elif agg_func == "min":
-                    result = self.df.groupby(group_col)[agg_col].min()
-                elif agg_func == "max":
-                    result = self.df.groupby(group_col)[agg_col].max()
-                
-                # Sort results
-                result = result.sort_values(ascending=ascending)
-                
-                # Display results - both in text (header) and grid (data)
-                self.output_text.delete(1.0, tk.END)
-                self.output_text.insert(tk.END, "=" * 80 + "\n")
-                self.output_text.insert(tk.END, f"GROUP BY ANALYSIS: {group_col}\n")
-                self.output_text.insert(tk.END, f"Aggregation: {agg_func.upper()}({agg_col})\n")
-                self.output_text.insert(tk.END, f"Sort Order: {'Ascending' if ascending else 'Descending'}\n")
-                self.output_text.insert(tk.END, f"Total Groups: {len(result)}\n")
-                self.output_text.insert(tk.END, "=" * 80 + "\n")
-                self.output_text.update_idletasks()
-                
-                # Display results in Excel-like grid
-                self.display_results_in_grid(
-                    result, 
-                    title=f"Group By: {group_col} | {agg_func.upper()}({agg_col})"
-                )
-                
-                self.notebook.select(0)
-                self.update_status(f"Group by {group_col} completed")
-                messagebox.showinfo("Success", f"Grouped by {group_col} - {len(result)} groups found")
-                dialog.destroy()
-                
-            except Exception as e:
-                messagebox.showerror("Error", f"Group by failed:\n{str(e)}")
-        
-        ttk.Button(dialog, text="Analyze", command=perform_groupby).pack(pady=20)
+        # Use dialog factory
+        AnalysisDialogs.show_groupby_dialog(
+            self.root, self.df, output_callback, 
+            self.display_results_in_grid, notebook_callback, 
+            self.update_status
+        )
     
     def pivot_table_analysis(self):
         """Pivot table - delegates to dialog"""
@@ -2146,67 +2067,13 @@ Would you like to recover this data?"""
                 messagebox.showerror("Error", f"Failed to save:\n{str(e)}")
     
     def sql_query(self):
-        """Execute SQL query on data"""
+        """Execute SQL query - delegates to dialog"""
         if self.df is None:
             messagebox.showwarning("Warning", "No data loaded!")
             return
         
-        from data_ops.sql_interface import SQLInterface
-        
-        dialog = tk.Toplevel(self.root)
-        dialog.title("SQL Query")
-        dialog.geometry("800x600")
-        
-        ttk.Label(dialog, text="Execute SQL Query (table name: 'data')", font=('Arial', 12, 'bold')).pack(pady=10)
-        
-        # Example queries
-        ttk.Label(dialog, text="Examples:", font=('Arial', 10, 'bold')).pack(pady=5)
-        examples_text = scrolledtext.ScrolledText(dialog, height=4, width=90, wrap=tk.WORD)
-        examples_text.pack(pady=5)
-        examples_text.insert(tk.END, "SELECT * FROM data LIMIT 10\n")
-        examples_text.insert(tk.END, "SELECT column, COUNT(*) FROM data GROUP BY column\n")
-        examples_text.insert(tk.END, "SELECT * FROM data WHERE numeric_column > 100\n")
-        examples_text.config(state=tk.DISABLED)
-        
-        # Query input
-        ttk.Label(dialog, text="Your SQL Query:").pack(pady=5)
-        query_text = scrolledtext.ScrolledText(dialog, height=5, width=90)
-        query_text.pack(pady=5)
-        query_text.insert(tk.END, "SELECT * FROM data LIMIT 20")
-        
-        # Result display
-        result_label = ttk.Label(dialog, text="Results:")
-        result_label.pack(pady=5)
-        result_text = scrolledtext.ScrolledText(dialog, height=15, width=90)
-        result_text.pack(pady=5)
-        
-        def execute():
-            query = query_text.get(1.0, tk.END).strip()
-            
-            # Validate query
-            is_safe, msg = SQLInterface.validate_query(query)
-            if not is_safe:
-                messagebox.showerror("Error", msg)
-                return
-            
-            # Execute query
-            result_df, error = SQLInterface.execute_query(self.df, query)
-            
-            if error:
-                result_text.delete(1.0, tk.END)
-                result_text.insert(tk.END, f"ERROR: {error}")
-            else:
-                result_text.delete(1.0, tk.END)
-                result_text.insert(tk.END, f"Rows returned: {len(result_df)}\n\n")
-                result_text.insert(tk.END, result_df.to_string())
-        
-        # Button in centered frame with explicit padding for consistent text positioning
-        btn_frame = ttk.Frame(dialog)
-        btn_frame.pack(pady=10)
-        exec_btn = ttk.Button(btn_frame, text="Execute Query", command=execute, width=15)
-        exec_btn.pack(ipady=2)  # Internal padding to keep text centered vertically
-        
-        self.update_status("SQL Query interface opened")
+        # Use dialog factory
+        AnalysisDialogs.show_sql_query_dialog(self.root, self.df, self.update_status)
     
     def data_profiling_report(self):
         """Generate comprehensive data profiling report"""
@@ -2260,88 +2127,13 @@ Would you like to recover this data?"""
         messagebox.showinfo("Success", "Data profiling report generated!")
     
     def statistical_tests(self):
-        """Perform statistical hypothesis tests"""
+        """Perform statistical tests - delegates to dialog"""
         if self.df is None:
             messagebox.showwarning("Warning", "No data loaded!")
             return
         
-        dialog = tk.Toplevel(self.root)
-        dialog.title("Statistical Tests")
-        dialog.geometry("600x500")
-        
-        ttk.Label(dialog, text="Select Statistical Test", font=('Arial', 14, 'bold')).pack(pady=10)
-        
-        test_var = tk.StringVar(value="t-test")
-        
-        ttk.Radiobutton(dialog, text="Independent T-Test (compare 2 groups)", variable=test_var, value="t-test").pack(pady=5)
-        ttk.Radiobutton(dialog, text="Paired T-Test (before/after)", variable=test_var, value="paired-t").pack(pady=5)
-        ttk.Radiobutton(dialog, text="ANOVA (compare 3+ groups)", variable=test_var, value="anova").pack(pady=5)
-        ttk.Radiobutton(dialog, text="Chi-Square Test (categorical)", variable=test_var, value="chi-square").pack(pady=5)
-        ttk.Radiobutton(dialog, text="Normality Test", variable=test_var, value="normality").pack(pady=5)
-        
-        ttk.Label(dialog, text="\nSelect columns:").pack(pady=10)
-        
-        numeric_cols = self.df.select_dtypes(include=[np.number]).columns.tolist()
-        
-        frame = ttk.Frame(dialog)
-        frame.pack(pady=5)
-        
-        ttk.Label(frame, text="Column 1:").grid(row=0, column=0, padx=5)
-        col1_var = tk.StringVar(value=numeric_cols[0] if numeric_cols else "")
-        ttk.Combobox(frame, textvariable=col1_var, values=numeric_cols, width=20).grid(row=0, column=1, padx=5)
-        
-        ttk.Label(frame, text="Column 2:").grid(row=1, column=0, padx=5)
-        col2_var = tk.StringVar(value=numeric_cols[1] if len(numeric_cols) > 1 else "")
-        ttk.Combobox(frame, textvariable=col2_var, values=numeric_cols, width=20).grid(row=1, column=1, padx=5)
-        
-        result_text = scrolledtext.ScrolledText(dialog, height=10, width=70)
-        result_text.pack(pady=10)
-        
-        def run_test():
-            from analysis.statistical_tests import HypothesisTesting
-            
-            test_type = test_var.get()
-            col1 = col1_var.get()
-            col2 = col2_var.get()
-            
-            if not col1 or col1 not in self.df.columns:
-                messagebox.showerror("Error", "Please select valid Column 1")
-                return
-            
-            try:
-                result_text.delete(1.0, tk.END)
-                
-                if test_type == "t-test":
-                    if not col2 or col2 not in self.df.columns:
-                        messagebox.showerror("Error", "Please select valid Column 2")
-                        return
-                    result = HypothesisTesting.t_test_independent(self.df[col1], self.df[col2])
-                    result_text.insert(tk.END, f"Independent T-Test: {col1} vs {col2}\n\n")
-                
-                elif test_type == "paired-t":
-                    if not col2 or col2 not in self.df.columns:
-                        messagebox.showerror("Error", "Please select valid Column 2")
-                        return
-                    result = HypothesisTesting.t_test_paired(self.df[col1], self.df[col2])
-                    result_text.insert(tk.END, f"Paired T-Test: {col1} vs {col2}\n\n")
-                
-                elif test_type == "normality":
-                    result = HypothesisTesting.normality_test(self.df[col1])
-                    result_text.insert(tk.END, f"Normality Test: {col1}\n\n")
-                
-                else:
-                    result_text.insert(tk.END, "Test not yet implemented in this interface\n")
-                    return
-                
-                for key, value in result.items():
-                    result_text.insert(tk.END, f"{key}: {value}\n")
-                
-                result_text.insert(tk.END, f"\n✅ {result.get('interpretation', '')}")
-                
-            except Exception as e:
-                messagebox.showerror("Error", f"Test failed: {str(e)}")
-        
-        ttk.Button(dialog, text="Run Test", command=run_test).pack(pady=10)
+        # Use dialog factory
+        AnalysisDialogs.show_statistical_tests_dialog(self.root, self.df)
     
     def ab_testing(self):
         """A/B Testing analysis"""
