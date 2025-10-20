@@ -659,6 +659,137 @@ class CleaningDialogs:
         ttk.Button(action_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
     
     @staticmethod
+    def show_find_replace_dialog(parent, df, cleaning_service, on_complete_callback):
+        """
+        Show find and replace dialog
+        
+        Args:
+            parent: Parent window
+            df: DataFrame to process
+            cleaning_service: CleaningService instance
+            on_complete_callback: Callback function(cleaned_df, count, status_msg, details)
+        """
+        import tkinter.scrolledtext as scrolledtext
+        
+        dialog = tk.Toplevel(parent)
+        dialog.title("Find & Replace")
+        dialog.geometry("550x450")
+        
+        ttk.Label(dialog, text="Find & Replace Values", font=('Arial', 12, 'bold')).pack(pady=15)
+        
+        # Scope selection
+        ttk.Label(dialog, text="Search in:", font=('Arial', 10, 'bold')).pack(pady=(10,5))
+        scope_var = tk.StringVar(value="all")
+        ttk.Radiobutton(dialog, text="All columns", variable=scope_var, value="all").pack(anchor='w', padx=50)
+        ttk.Radiobutton(dialog, text="Specific column", variable=scope_var, value="specific").pack(anchor='w', padx=50)
+        
+        col_var = tk.StringVar()
+        col_dropdown = ttk.Combobox(dialog, textvariable=col_var, values=list(df.columns), state='readonly', width=25)
+        col_dropdown.pack(pady=5)
+        if len(df.columns) > 0:
+            col_dropdown.current(0)
+        
+        # Find and replace inputs
+        ttk.Label(dialog, text="Find what:", font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        find_var = tk.StringVar()
+        ttk.Entry(dialog, textvariable=find_var, width=40).pack(pady=5)
+        
+        ttk.Label(dialog, text="Replace with:", font=('Arial', 10, 'bold')).pack(pady=(10,5))
+        replace_var = tk.StringVar()
+        ttk.Entry(dialog, textvariable=replace_var, width=40).pack(pady=5)
+        
+        case_sensitive_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(dialog, text="Case sensitive", variable=case_sensitive_var).pack(pady=5)
+        
+        # Preview area
+        preview_text = scrolledtext.ScrolledText(dialog, height=6, width=60)
+        preview_text.pack(pady=10, padx=20)
+        preview_text.config(state=tk.DISABLED)
+        
+        def show_preview():
+            find_val = find_var.get()
+            if not find_val:
+                messagebox.showwarning("Warning", "Please enter a value to find!")
+                return
+                
+            preview_text.config(state=tk.NORMAL)
+            preview_text.delete(1.0, tk.END)
+            
+            try:
+                count = 0
+                if scope_var.get() == "all":
+                    for col in df.columns:
+                        if df[col].dtype == 'object':
+                            matches = df[col].astype(str).str.contains(find_val, case=case_sensitive_var.get(), na=False).sum()
+                            count += matches
+                else:
+                    col = col_var.get()
+                    count = df[col].astype(str).str.contains(find_val, case=case_sensitive_var.get(), na=False).sum()
+                    
+                preview_text.insert(tk.END, f"Found '{find_val}' in {count} cell(s)\n")
+                preview_text.insert(tk.END, f"Will replace with '{replace_var.get()}'\n")
+            except Exception as e:
+                preview_text.insert(tk.END, f"Error: {str(e)}")
+                
+            preview_text.config(state=tk.DISABLED)
+        
+        def apply_replace():
+            find_val = find_var.get()
+            replace_val = replace_var.get()
+            
+            if not find_val:
+                messagebox.showwarning("Warning", "Please enter a value to find!")
+                return
+            
+            try:
+                count = 0
+                result_df = df.copy()
+                
+                if scope_var.get() == "all":
+                    # Apply to all text columns
+                    for col in result_df.columns:
+                        if result_df[col].dtype == 'object':
+                            result_df, num_replaced = cleaning_service.find_and_replace(
+                                result_df, col, find_val, replace_val, exact_match=not case_sensitive_var.get()
+                            )
+                            count += 1
+                else:
+                    # Apply to specific column
+                    col = col_var.get()
+                    result_df, num_replaced = cleaning_service.find_and_replace(
+                        result_df, col, find_val, replace_val, exact_match=not case_sensitive_var.get()
+                    )
+                    count = 1
+                
+                # Build status message
+                status_msg = f"Replaced '{find_val}' with '{replace_val}'"
+                details = {
+                    'find': find_val,
+                    'replace': replace_val,
+                    'scope': scope_var.get(),
+                    'column': col_var.get() if scope_var.get() == "specific" else "all",
+                    'count': count
+                }
+                
+                # Call callback
+                on_complete_callback(result_df, count, status_msg, details)
+                
+                messagebox.showinfo("Success", f"Replace complete!\nProcessed {count} column(s)")
+                dialog.destroy()
+                
+            except Exception as e:
+                messagebox.showerror("Error", f"Replace failed:\n{str(e)}")
+        
+        # Action buttons
+        btn_frame = ttk.Frame(dialog)
+        btn_frame.pack(pady=10)
+        
+        ttk.Button(btn_frame, text="Preview", command=show_preview).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Replace All", command=apply_replace, 
+                  style='Action.TButton').pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+    
+    @staticmethod
     def confirm_trim_all_columns(parent, df, cleaning_service, on_complete_callback):
         """
         Confirm and trim all text columns

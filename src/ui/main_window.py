@@ -1660,95 +1660,23 @@ Would you like to recover this data?"""
     # These are now handled by AIService.generate_report() which includes all this functionality
     
     def find_replace(self):
+        """Find and replace values - delegates to dialog"""
         if self.df is None:
             messagebox.showwarning("Warning", "No data loaded!")
             return
-        dialog = tk.Toplevel(self.root)
-        dialog.title("Find & Replace")
-        dialog.geometry("550x450")
-        ttk.Label(dialog, text="Find & Replace Values", font=('Arial', 12, 'bold')).pack(pady=15)
-        ttk.Label(dialog, text="Search in:", font=('Arial', 10, 'bold')).pack(pady=(10,5))
-        scope_var = tk.StringVar(value="all")
-        ttk.Radiobutton(dialog, text="All columns", variable=scope_var, value="all").pack(anchor='w', padx=50)
-        ttk.Radiobutton(dialog, text="Specific column", variable=scope_var, value="specific").pack(anchor='w', padx=50)
-        col_var = tk.StringVar()
-        col_dropdown = ttk.Combobox(dialog, textvariable=col_var, values=list(self.df.columns), state='readonly', width=25)
-        col_dropdown.pack(pady=5)
-        if len(self.df.columns) > 0:
-            col_dropdown.current(0)
-        ttk.Label(dialog, text="Find what:", font=('Arial', 10, 'bold')).pack(pady=(15,5))
-        find_var = tk.StringVar()
-        ttk.Entry(dialog, textvariable=find_var, width=40).pack(pady=5)
-        ttk.Label(dialog, text="Replace with:", font=('Arial', 10, 'bold')).pack(pady=(10,5))
-        replace_var = tk.StringVar()
-        ttk.Entry(dialog, textvariable=replace_var, width=40).pack(pady=5)
-        case_sensitive_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(dialog, text="Case sensitive", variable=case_sensitive_var).pack(pady=5)
-        preview_text = scrolledtext.ScrolledText(dialog, height=6, width=60)
-        preview_text.pack(pady=10, padx=20)
-        preview_text.config(state=tk.DISABLED)
-        def show_preview():
-            find_val = find_var.get()
-            if not find_val:
-                messagebox.showwarning("Warning", "Please enter a value to find!")
-                return
-            preview_text.config(state=tk.NORMAL)
-            preview_text.delete(1.0, tk.END)
-            try:
-                count = 0
-                if scope_var.get() == "all":
-                    for col in self.df.columns:
-                        if self.df[col].dtype == 'object':
-                            matches = self.df[col].astype(str).str.contains(find_val, case=case_sensitive_var.get(), na=False).sum()
-                            count += matches
-                else:
-                    col = col_var.get()
-                    count = self.df[col].astype(str).str.contains(find_val, case=case_sensitive_var.get(), na=False).sum()
-                preview_text.insert(tk.END, f"Found '{find_val}' in {count} cell(s)\n")
-                preview_text.insert(tk.END, f"Will replace with '{replace_var.get()}'\n")
-            except Exception as e:
-                preview_text.insert(tk.END, f"Error: {str(e)}")
-            preview_text.config(state=tk.DISABLED)
-        def apply_replace():
-            find_val = find_var.get()
-            replace_val = replace_var.get()
-            if not find_val:
-                messagebox.showwarning("Warning", "Please enter a value to find!")
-                return
-            try:
-                count = 0
-                if scope_var.get() == "all":
-                    # Apply to all text columns
-                    for col in self.df.columns:
-                        if self.df[col].dtype == 'object':
-                            cleaned_df, num_replaced = self.cleaning_service.find_and_replace(
-                                self.df, col, find_val, replace_val, exact_match=not case_sensitive_var.get()
-                            )
-                            self.df = cleaned_df
-                            self.update_autosave_data()
-                            count += 1
-                else:
-                    # Apply to specific column
-                    col = col_var.get()
-                    cleaned_df, num_replaced = self.cleaning_service.find_and_replace(
-                        self.df, col, find_val, replace_val, exact_match=not case_sensitive_var.get()
-                    )
-                    self.df = cleaned_df
-                    self.update_autosave_data()
-                    count = 1
-                    
-                self.update_info_panel()
-                self.view_data()
-                self.update_status(f"Replaced '{find_val}' with '{replace_val}'")
-                messagebox.showinfo("Success", f"Replace complete!\nProcessed {count} column(s)")
-                dialog.destroy()
-            except Exception as e:
-                messagebox.showerror("Error", f"Replace failed:\n{str(e)}")
-        btn_frame = ttk.Frame(dialog)
-        btn_frame.pack(pady=10)
-        ttk.Button(btn_frame, text="Preview", command=show_preview).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_frame, text="Replace All", command=apply_replace, style='Action.TButton').pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+        
+        def on_complete(cleaned_df, count, status_msg, details):
+            """Callback when find/replace complete"""
+            self.df = cleaned_df
+            self.update_autosave_data()
+            self.update_info_panel()
+            self.view_data()
+            self.update_status(status_msg)
+        
+        # Use dialog factory
+        CleaningDialogs.show_find_replace_dialog(
+            self.root, self.df, self.cleaning_service, on_complete
+        )
     
     def standardize_text_case(self):
         if self.df is None:
