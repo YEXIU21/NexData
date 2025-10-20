@@ -861,6 +861,44 @@ Would you like to recover this data?"""
             messagebox.showwarning("Warning", "No data loaded!")
             return
         
+        def on_complete(cleaned_df, removed, status_msg, subset_cols, keep_option):
+            """Callback when duplicates removed"""
+            before = len(self.df)
+            self.df = cleaned_df
+            self.update_autosave_data()
+            
+            # Output to text area
+            self.output_text.delete(1.0, tk.END)
+            self.output_text.insert(tk.END, "=" * 80 + "\n")
+            self.output_text.insert(tk.END, "REMOVE DUPLICATES - OPERATION COMPLETE\n")
+            self.output_text.insert(tk.END, "=" * 80 + "\n\n")
+            self.output_text.insert(tk.END, f"✓ Original rows: {before}\n")
+            self.output_text.insert(tk.END, f"✓ Duplicates removed: {removed}\n")
+            self.output_text.insert(tk.END, f"✓ Remaining rows: {len(self.df)}\n\n")
+            self.output_text.insert(tk.END, f"Columns checked: {', '.join(subset_cols)}\n")
+            self.output_text.insert(tk.END, f"Keep strategy: {keep_option}\n\n")
+            self.output_text.insert(tk.END, "=" * 80 + "\n")
+            if removed > 0:
+                self.output_text.insert(tk.END, f"SUCCESS: {removed} duplicate row(s) removed from dataset\n")
+            else:
+                self.output_text.insert(tk.END, "INFO: No duplicates found in selected columns\n")
+            self.output_text.update_idletasks()
+            self.notebook.select(0)
+            
+            self.update_info_panel()
+            self.update_status(status_msg)
+        
+        # Use dialog factory
+        CleaningDialogs.show_remove_duplicates_dialog(
+            self.root, self.df, self.cleaning_service, on_complete
+        )
+    
+    def remove_duplicates_OLD(self):
+        if self.df is None:
+            messagebox.showwarning("Warning", "No data loaded!")
+            return
+        
+        # OLD CODE - TO BE REMOVED
         # Create dialog for duplicate removal options
         dialog = tk.Toplevel(self.root)
         dialog.title("Remove Duplicates")
