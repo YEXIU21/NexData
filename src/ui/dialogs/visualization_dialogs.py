@@ -165,3 +165,174 @@ class VisualizationDialogs:
         ttk.Button(button_frame, text="Create Histogram", command=plot, 
                   style='Action.TButton').pack(side=tk.LEFT, padx=5)
         ttk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+    
+    @staticmethod
+    def show_boxplot_dialog(parent, df, create_plot_callback):
+        """
+        Show boxplot creation dialog
+        
+        Args:
+            parent: Parent window
+            df: DataFrame to visualize
+            create_plot_callback: Callback function(plot_func)
+        """
+        import matplotlib.pyplot as plt
+        
+        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+        if not numeric_cols:
+            messagebox.showwarning("Warning", "No numeric columns!")
+            return
+        
+        dialog = tk.Toplevel(parent)
+        dialog.title("Create Box Plot")
+        dialog.geometry("500x500")
+        
+        ttk.Label(dialog, text="Create Box Plot - Advanced", 
+                 font=('Arial', 12, 'bold')).pack(pady=10)
+        
+        # Column selection
+        ttk.Label(dialog, text="Select columns to plot:", 
+                 font=('Arial', 10, 'bold')).pack(pady=(10,5))
+        
+        # Listbox for multi-column selection
+        list_frame = ttk.Frame(dialog)
+        list_frame.pack(pady=5, fill=tk.BOTH, expand=True, padx=20)
+        
+        scrollbar = ttk.Scrollbar(list_frame)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        col_listbox = tk.Listbox(list_frame, selectmode=tk.MULTIPLE, 
+                                yscrollcommand=scrollbar.set, height=6)
+        col_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.config(command=col_listbox.yview)
+        
+        for col in numeric_cols:
+            col_listbox.insert(tk.END, col)
+        
+        # Select all by default
+        col_listbox.select_set(0, tk.END)
+        
+        # Quick select buttons
+        btn_frame = ttk.Frame(dialog)
+        btn_frame.pack(pady=5)
+        
+        def select_all():
+            col_listbox.select_set(0, tk.END)
+        
+        def clear_all():
+            col_listbox.selection_clear(0, tk.END)
+        
+        ttk.Button(btn_frame, text="Select All", command=select_all).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Clear All", command=clear_all).pack(side=tk.LEFT, padx=5)
+        
+        # Orientation
+        ttk.Label(dialog, text="Orientation:", font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        
+        orientation_var = tk.StringVar(value="vertical")
+        orient_frame = ttk.Frame(dialog)
+        orient_frame.pack(pady=5)
+        
+        ttk.Radiobutton(orient_frame, text="Vertical", 
+                       variable=orientation_var, value="vertical").pack(side=tk.LEFT, padx=20)
+        ttk.Radiobutton(orient_frame, text="Horizontal", 
+                       variable=orientation_var, value="horizontal").pack(side=tk.LEFT, padx=20)
+        
+        # Display options
+        ttk.Label(dialog, text="Display options:", font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        
+        show_means_var = tk.BooleanVar(value=False)
+        show_outliers_var = tk.BooleanVar(value=True)
+        show_notch_var = tk.BooleanVar(value=False)
+        
+        opt_frame = ttk.Frame(dialog)
+        opt_frame.pack(pady=5)
+        
+        ttk.Checkbutton(opt_frame, text="Show means", 
+                       variable=show_means_var).pack(anchor='w', padx=50)
+        ttk.Checkbutton(opt_frame, text="Show outliers", 
+                       variable=show_outliers_var).pack(anchor='w', padx=50)
+        ttk.Checkbutton(opt_frame, text="Show notch (confidence interval)", 
+                       variable=show_notch_var).pack(anchor='w', padx=50)
+        
+        # Color
+        ttk.Label(dialog, text="Box color:", font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        
+        color_var = tk.StringVar(value="lightblue")
+        color_frame = ttk.Frame(dialog)
+        color_frame.pack(pady=5)
+        
+        colors = [("Light Blue", "lightblue"), ("Light Green", "lightgreen"), 
+                  ("Light Coral", "lightcoral"), ("Light Gray", "lightgray")]
+        
+        for i, (name, color) in enumerate(colors):
+            ttk.Radiobutton(color_frame, text=name, variable=color_var, 
+                           value=color).grid(row=0, column=i, padx=10)
+        
+        # Title
+        ttk.Label(dialog, text="Chart title (optional):", font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        title_var = tk.StringVar(value="")
+        ttk.Entry(dialog, textvariable=title_var, width=40).pack(pady=5)
+        
+        def plot():
+            selected_indices = col_listbox.curselection()
+            if not selected_indices:
+                messagebox.showwarning("Warning", "Please select at least one column!")
+                return
+            
+            selected_cols = [col_listbox.get(i) for i in selected_indices]
+            
+            try:
+                orientation = orientation_var.get()
+                vert = (orientation == "vertical")
+                chart_title = title_var.get() if title_var.get() else 'Box Plot - Distribution Comparison'
+                color = color_var.get()
+                
+                def plot_func(fig, ax):
+                    data_to_plot = [df[col].dropna() for col in selected_cols]
+                    
+                    bp = ax.boxplot(data_to_plot, labels=selected_cols, 
+                                   vert=vert, patch_artist=True,
+                                   showmeans=show_means_var.get(),
+                                   showfliers=show_outliers_var.get(),
+                                   notch=show_notch_var.get())
+                    
+                    # Color the boxes
+                    for patch in bp['boxes']:
+                        patch.set_facecolor(color)
+                        patch.set_alpha(0.7)
+                    
+                    # Style medians
+                    for median in bp['medians']:
+                        median.set_color('red')
+                        median.set_linewidth(2)
+                    
+                    # Style means if shown
+                    if show_means_var.get():
+                        for mean in bp['means']:
+                            mean.set_marker('D')
+                            mean.set_markerfacecolor('green')
+                            mean.set_markersize(6)
+                    
+                    ax.set_title(chart_title, fontsize=14, fontweight='bold')
+                    
+                    if vert:
+                        ax.set_ylabel('Values', fontsize=11)
+                        ax.grid(True, alpha=0.3, axis='y')
+                        plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
+                    else:
+                        ax.set_xlabel('Values', fontsize=11)
+                        ax.grid(True, alpha=0.3, axis='x')
+                
+                create_plot_callback(plot_func)
+                dialog.destroy()
+                
+            except Exception as e:
+                messagebox.showerror("Error", f"Box plot creation failed:\n{str(e)}")
+        
+        # Action buttons
+        button_frame = ttk.Frame(dialog)
+        button_frame.pack(pady=20)
+        
+        ttk.Button(button_frame, text="Create Plot", command=plot, 
+                  style='Action.TButton').pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
