@@ -39,6 +39,12 @@ from utils.autosave_manager import get_autosave_manager
 # Import service layer
 from services import CleaningService, AnalysisService, AIService, DataService
 
+# Import UI managers
+from ui.managers import MenuManager, ExportManager, VisualizationManager
+
+# Import dialogs
+from ui.dialogs import CleaningDialogs
+
 
 class DataAnalystApp:
     def __init__(self, root):
@@ -70,6 +76,11 @@ class DataAnalystApp:
         
         # Initialize autosave (5 minute interval)
         self.autosave_manager = get_autosave_manager(save_interval=300)
+        
+        # Initialize UI managers
+        self.menu_manager = MenuManager(self.root, self)
+        self.export_manager = ExportManager(self)
+        self.viz_manager = VisualizationManager(self)
         
         self.setup_styles()
         self.create_menu()
@@ -824,6 +835,7 @@ Would you like to recover this data?"""
         if messagebox.askyesno("Confirm", "Reset to original data? This will clear all filters and modifications."):
             filtered_count = len(self.df)
             self.df = self.original_df.copy()
+            self.update_autosave_data()
             original_count = len(self.df)
             
             # Show clear output message
@@ -972,6 +984,7 @@ Would you like to recover this data?"""
                     keep=keep_option
                 )
                 self.df = cleaned_df
+                self.update_autosave_data()
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to remove duplicates: {str(e)}")
                 return
@@ -1092,6 +1105,9 @@ Would you like to recover this data?"""
                         self.df[selected_col].fillna(custom_val, inplace=True)
                     elif method == "ffill":
                         self.df[selected_col].fillna(method='ffill', inplace=True)
+                
+                # Update autosave after modifications
+                self.update_autosave_data()
                 
                 # Output to text area
                 self.output_text.delete(1.0, tk.END)
@@ -1272,6 +1288,7 @@ Would you like to recover this data?"""
                     threshold=threshold
                 )
                 self.df = cleaned_df
+                self.update_autosave_data()
                 
                 # Output to text area
                 self.output_text.delete(1.0, tk.END)
@@ -1788,6 +1805,7 @@ Would you like to recover this data?"""
                     key_col
                 )
                 self.df = cleaned_df
+                self.update_autosave_data()
                 
                 # Output results
                 self.output_text.delete(1.0, tk.END)
@@ -1851,6 +1869,22 @@ Would you like to recover this data?"""
         
         # Analyze data using AI service
         recommendations = self.ai_service.analyze_data_quality(self.df)
+        
+        # Map tool names to actual action methods
+        action_map = {
+            'Remove Duplicates': self.remove_duplicates,
+            'Smart Fill Missing Data': self.smart_fill_missing,
+            'Handle Missing Values': self.handle_missing_values,
+            'Trim All Columns': self.trim_all_columns,
+            'Standardize Text Case': self.standardize_text_case,
+            'Remove Empty Rows/Columns': self.remove_empty,
+            'Remove Outliers': self.remove_outliers
+        }
+        
+        # Add action callbacks to recommendations
+        for rec in recommendations:
+            tool_name = rec['tool']
+            rec['action'] = action_map.get(tool_name, lambda: messagebox.showinfo("Info", "Tool coming soon!"))
         
         # Group by priority
         high_priority = [r for r in recommendations if r['priority'] == 'High']
@@ -2052,6 +2086,7 @@ Would you like to recover this data?"""
                                 self.df, col, find_val, replace_val, exact_match=not case_sensitive_var.get()
                             )
                             self.df = cleaned_df
+                            self.update_autosave_data()
                             count += 1
                 else:
                     # Apply to specific column
@@ -2060,6 +2095,7 @@ Would you like to recover this data?"""
                         self.df, col, find_val, replace_val, exact_match=not case_sensitive_var.get()
                     )
                     self.df = cleaned_df
+                    self.update_autosave_data()
                     count = 1
                     
                 self.update_info_panel()
@@ -2141,6 +2177,7 @@ Would you like to recover this data?"""
                     service_case
                 )
                 self.df = cleaned_df
+                self.update_autosave_data()
                 
                 self.update_info_panel()
                 self.view_data()
@@ -2186,6 +2223,7 @@ Would you like to recover this data?"""
                     remove_cols=remove_cols_var.get()
                 )
                 self.df = cleaned_df
+                self.update_autosave_data()
                 
                 self.update_info_panel()
                 self.view_data()
@@ -2209,6 +2247,7 @@ Would you like to recover this data?"""
                 text_cols = self.df.select_dtypes(include=['object']).columns
                 cleaned_df = self.cleaning_service.trim_all_columns(self.df)
                 self.df = cleaned_df
+                self.update_autosave_data()
                 
                 self.update_info_panel()
                 self.view_data()
@@ -2290,6 +2329,8 @@ Would you like to recover this data?"""
                     service_type
                 )
                 self.df = cleaned_df
+                self.update_autosave_data()
+                
                 self.update_info_panel()
                 self.view_data()
                 self.update_status(f"Converted {col} to {target_type}")
@@ -2353,6 +2394,7 @@ Would you like to recover this data?"""
                     date_format=fmt
                 )
                 self.df = cleaned_df
+                self.update_autosave_data()
                 
                 self.update_info_panel()
                 self.view_data()
@@ -2443,6 +2485,7 @@ Would you like to recover this data?"""
                     custom_chars=custom_chars
                 )
                 self.df = cleaned_df
+                self.update_autosave_data()
                 
                 self.update_info_panel()
                 self.view_data()
@@ -2528,6 +2571,7 @@ Would you like to recover this data?"""
                     delimiter=delim
                 )
                 self.df = cleaned_df
+                self.update_autosave_data()
                 
                 self.update_info_panel()
                 self.view_data()
@@ -2602,6 +2646,7 @@ Would you like to recover this data?"""
                     new_column_name=new_name
                 )
                 self.df = cleaned_df
+                self.update_autosave_data()
                 
                 self.update_info_panel()
                 self.view_data()
