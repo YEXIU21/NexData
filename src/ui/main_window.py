@@ -1449,208 +1449,45 @@ Would you like to recover this data?"""
         ttk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
     
     def smart_fill_missing(self):
-        """Smart fill missing values by looking up matching IDs"""
+        """Smart fill missing values by looking up matching IDs - delegates to dialog"""
         if self.df is None:
             messagebox.showwarning("Warning", "No data loaded!")
             return
         
-        # Find columns with missing values
-        missing_cols = self.df.columns[self.df.isnull().any()].tolist()
-        if not missing_cols:
-            messagebox.showinfo("Info", "No missing values found in the dataset!")
-            return
-        
-        # Create dialog
-        dialog = tk.Toplevel(self.root)
-        dialog.title("Smart Fill Missing Data")
-        dialog.geometry("650x600")
-        
-        ttk.Label(dialog, text="Smart Fill Missing Data - Intelligent Lookup", 
-                 font=('Arial', 12, 'bold')).pack(pady=15)
-        
-        # Instructions
-        info_frame = ttk.LabelFrame(dialog, text="How It Works", padding=10)
-        info_frame.pack(pady=10, padx=20, fill=tk.X)
-        ttk.Label(info_frame, text="• Select column with missing values (e.g., customer_name)\n"
-                                   "• Select lookup key column (e.g., customer_id)\n"
-                                   "• System finds matching rows and fills missing values\n"
-                                   "• Preview shows what will be filled",
-                 justify=tk.LEFT).pack()
-        
-        # Column with missing values
-        ttk.Label(dialog, text="Column with missing values:", 
-                 font=('Arial', 10, 'bold')).pack(pady=(15,5))
-        
-        target_col_var = tk.StringVar()
-        target_col_dropdown = ttk.Combobox(dialog, textvariable=target_col_var,
-                                          values=missing_cols, state='readonly', width=25)
-        target_col_dropdown.pack(pady=5)
-        if missing_cols:
-            target_col_dropdown.current(0)
-        
-        # Lookup key column
-        ttk.Label(dialog, text="Lookup key column (ID to match on):", 
-                 font=('Arial', 10, 'bold')).pack(pady=(15,5))
-        
-        key_col_var = tk.StringVar()
-        all_cols = list(self.df.columns)
-        key_col_dropdown = ttk.Combobox(dialog, textvariable=key_col_var,
-                                       values=all_cols, state='readonly', width=25)
-        key_col_dropdown.pack(pady=5)
-        # Try to auto-detect ID column
-        id_cols = [col for col in all_cols if 'id' in col.lower()]
-        if id_cols:
-            key_col_var.set(id_cols[0])
-        elif all_cols:
-            key_col_dropdown.current(0)
-        
-        # Preview area
-        preview_frame = ttk.LabelFrame(dialog, text="Preview - What Will Be Filled", padding=10)
-        preview_frame.pack(pady=15, padx=20, fill=tk.BOTH, expand=True)
-        
-        preview_text = tk.Text(preview_frame, height=15, width=70, wrap=tk.NONE)
-        preview_scroll = ttk.Scrollbar(preview_frame, orient=tk.VERTICAL, command=preview_text.yview)
-        preview_text.config(yscrollcommand=preview_scroll.set)
-        preview_text.grid(row=0, column=0, sticky='nsew')
-        preview_scroll.grid(row=0, column=1, sticky='ns')
-        preview_frame.grid_rowconfigure(0, weight=1)
-        preview_frame.grid_columnconfigure(0, weight=1)
-        preview_text.config(state=tk.DISABLED)
-        
-        def show_preview():
-            """Preview what will be filled"""
-            preview_text.config(state=tk.NORMAL)
-            preview_text.delete(1.0, tk.END)
+        def on_complete(cleaned_df, filled_count, status_msg, details):
+            """Callback when smart fill complete"""
+            self.df = cleaned_df
+            self.update_autosave_data()
             
-            target_col = target_col_var.get()
-            key_col = key_col_var.get()
+            # Output results
+            self.output_text.delete(1.0, tk.END)
+            self.output_text.insert(tk.END, "=" * 80 + "\n")
+            self.output_text.insert(tk.END, "SMART FILL MISSING DATA - COMPLETE\n")
+            self.output_text.insert(tk.END, "=" * 80 + "\n\n")
+            self.output_text.insert(tk.END, f"Target column: {details['target_column']}\n")
+            self.output_text.insert(tk.END, f"Lookup key: {details['lookup_key']}\n\n")
+            self.output_text.insert(tk.END, f"✓ Missing values before: {details['before']}\n")
+            self.output_text.insert(tk.END, f"✓ Values filled: {filled_count}\n")
+            self.output_text.insert(tk.END, f"✓ Still missing: {details['still_missing']}\n\n")
+            self.output_text.insert(tk.END, "=" * 80 + "\n")
             
-            if not target_col or not key_col:
-                preview_text.insert(tk.END, "⚠️ Please select both columns\n")
-                preview_text.config(state=tk.DISABLED)
-                return
+            if filled_count > 0:
+                self.output_text.insert(tk.END, f"SUCCESS: Filled {filled_count} missing value(s)\n")
+                self.output_text.insert(tk.END, f"Example: Found {details['target_column']} by matching {details['lookup_key']}\n")
+            else:
+                self.output_text.insert(tk.END, "INFO: No values could be filled (no matching keys found)\n")
             
-            try:
-                # Find rows with missing values in target column
-                missing_mask = self.df[target_col].isnull()
-                missing_rows = self.df[missing_mask]
-                
-                if len(missing_rows) == 0:
-                    preview_text.insert(tk.END, f"✓ No missing values in '{target_col}'\n")
-                    preview_text.config(state=tk.DISABLED)
-                    return
-                
-                # For each missing row, find matching rows and get fill value
-                fill_preview = []
-                for idx, row in missing_rows.iterrows():
-                    key_value = row[key_col]
-                    
-                    # Find matching rows with same key that have non-null target value
-                    matches = self.df[(self.df[key_col] == key_value) & 
-                                     (self.df[target_col].notnull())]
-                    
-                    if len(matches) > 0:
-                        # Get most common value
-                        fill_value = matches[target_col].mode()[0] if len(matches[target_col].mode()) > 0 else matches[target_col].iloc[0]
-                        fill_preview.append({
-                            'index': idx,
-                            'key': key_value,
-                            'fill_value': fill_value,
-                            'found_in': len(matches)
-                        })
-                
-                if not fill_preview:
-                    preview_text.insert(tk.END, f"⚠️ No matching rows found to fill missing values\n\n")
-                    preview_text.insert(tk.END, f"Missing {target_col}: {len(missing_rows)} rows\n")
-                    preview_text.insert(tk.END, f"But no other rows with same {key_col} have valid {target_col}\n")
-                else:
-                    preview_text.insert(tk.END, f"📋 Can fill {len(fill_preview)} of {len(missing_rows)} missing values:\n\n")
-                    preview_text.insert(tk.END, f"{'Row':<6} {key_col:<15} → {target_col}\n")
-                    preview_text.insert(tk.END, "=" * 60 + "\n")
-                    
-                    for item in fill_preview[:15]:
-                        preview_text.insert(tk.END, 
-                            f"{item['index']:<6} {str(item['key']):<15} → {item['fill_value']} "
-                            f"(from {item['found_in']} matches)\n")
-                    
-                    if len(fill_preview) > 15:
-                        preview_text.insert(tk.END, f"\n... and {len(fill_preview) - 15} more\n")
-                    
-                    unfillable = len(missing_rows) - len(fill_preview)
-                    if unfillable > 0:
-                        preview_text.insert(tk.END, f"\n⚠️ {unfillable} rows cannot be filled (no matching {key_col})\n")
-                
-            except Exception as e:
-                preview_text.insert(tk.END, f"❌ Error: {str(e)}")
+            self.output_text.update_idletasks()
+            self.notebook.select(0)
             
-            preview_text.config(state=tk.DISABLED)
+            self.update_info_panel()
+            self.view_data()
+            self.update_status(status_msg)
         
-        def apply_fill():
-            """Apply the smart fill"""
-            target_col = target_col_var.get()
-            key_col = key_col_var.get()
-            
-            if not target_col or not key_col:
-                messagebox.showwarning("Warning", "Please select both columns!")
-                return
-            
-            try:
-                # Find rows with missing values
-                missing_mask = self.df[target_col].isnull()
-                missing_rows = self.df[missing_mask]
-                before_count = len(missing_rows)
-                
-                # Use cleaning service
-                cleaned_df, filled_count = self.cleaning_service.smart_fill_missing(
-                    self.df,
-                    target_col,
-                    key_col
-                )
-                self.df = cleaned_df
-                self.update_autosave_data()
-                
-                # Output results
-                self.output_text.delete(1.0, tk.END)
-                self.output_text.insert(tk.END, "=" * 80 + "\n")
-                self.output_text.insert(tk.END, "SMART FILL MISSING DATA - COMPLETE\n")
-                self.output_text.insert(tk.END, "=" * 80 + "\n\n")
-                self.output_text.insert(tk.END, f"Target column: {target_col}\n")
-                self.output_text.insert(tk.END, f"Lookup key: {key_col}\n\n")
-                self.output_text.insert(tk.END, f"✓ Missing values before: {before_count}\n")
-                self.output_text.insert(tk.END, f"✓ Values filled: {filled_count}\n")
-                self.output_text.insert(tk.END, f"✓ Still missing: {before_count - filled_count}\n\n")
-                self.output_text.insert(tk.END, "=" * 80 + "\n")
-                
-                if filled_count > 0:
-                    self.output_text.insert(tk.END, f"SUCCESS: Filled {filled_count} missing value(s)\n")
-                    self.output_text.insert(tk.END, f"Example: Found {target_col} by matching {key_col}\n")
-                else:
-                    self.output_text.insert(tk.END, "INFO: No values could be filled (no matching keys found)\n")
-                
-                self.output_text.update_idletasks()
-                self.notebook.select(0)
-                
-                self.update_info_panel()
-                self.view_data()
-                self.update_status(f"Smart filled {filled_count} values")
-                
-                messagebox.showinfo("Success", 
-                                  f"Smart fill complete!\n\n"
-                                  f"Filled: {filled_count} values\n"
-                                  f"Still missing: {before_count - filled_count}")
-                dialog.destroy()
-                
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to fill missing data:\n{str(e)}")
-        
-        # Action buttons
-        action_frame = ttk.Frame(dialog)
-        action_frame.pack(pady=15)
-        
-        ttk.Button(action_frame, text="Preview", command=show_preview).pack(side=tk.LEFT, padx=5)
-        ttk.Button(action_frame, text="Apply Fill", command=apply_fill, 
-                  style='Action.TButton').pack(side=tk.LEFT, padx=5)
-        ttk.Button(action_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+        # Use dialog factory
+        CleaningDialogs.show_smart_fill_missing_dialog(
+            self.root, self.df, self.cleaning_service, on_complete
+        )
     
     def data_quality_advisor(self):
         """AI-powered data quality analysis and recommendations"""
