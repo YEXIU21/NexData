@@ -2197,22 +2197,23 @@ Would you like to recover this data?"""
         ttk.Button(btn_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
     
     def trim_all_columns(self):
+        """Trim whitespace from all text columns - delegates to dialog"""
         if self.df is None:
             messagebox.showwarning("Warning", "No data loaded!")
             return
-        if messagebox.askyesno("Confirm", "Trim whitespace from all text columns?"):
-            try:
-                # Use cleaning service
-                text_cols = self.df.select_dtypes(include=['object']).columns
-                cleaned_df = self.cleaning_service.trim_all_columns(self.df)
-                self.df = cleaned_df
-                self.update_autosave_data()
-                
-                self.update_info_panel()
-                self.view_data()
-                messagebox.showinfo("Success", f"Trimmed {len(text_cols)} columns!")
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to trim columns: {str(e)}")
+        
+        def on_complete(cleaned_df, count, status_msg):
+            """Callback when trim complete"""
+            self.df = cleaned_df
+            self.update_autosave_data()
+            self.update_info_panel()
+            self.view_data()
+            self.update_status(status_msg)
+        
+        # Use dialog factory
+        CleaningDialogs.confirm_trim_all_columns(
+            self.root, self.df, self.cleaning_service, on_complete
+        )
     
     def convert_data_types(self):
         if self.df is None:
