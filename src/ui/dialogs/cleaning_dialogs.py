@@ -1312,6 +1312,212 @@ class CleaningDialogs:
         ttk.Button(btn_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
     
     @staticmethod
+    def show_split_column_dialog(parent, df, cleaning_service, on_complete_callback):
+        """
+        Show split column dialog
+        
+        Args:
+            parent: Parent window
+            df: DataFrame to process
+            cleaning_service: CleaningService instance
+            on_complete_callback: Callback function(cleaned_df, col, num_cols, status_msg)
+        """
+        import tkinter.scrolledtext as scrolledtext
+        import pandas as pd
+        
+        dialog = tk.Toplevel(parent)
+        dialog.title("Split Column")
+        dialog.geometry("500x400")
+        
+        ttk.Label(dialog, text="Split Column by Delimiter", font=('Arial', 12, 'bold')).pack(pady=15)
+        
+        # Column selection
+        ttk.Label(dialog, text="Select column to split:", font=('Arial', 10, 'bold')).pack(pady=5)
+        col_var = tk.StringVar()
+        col_combo = ttk.Combobox(dialog, textvariable=col_var, values=list(df.columns), state='readonly', width=25)
+        col_combo.pack(pady=5)
+        if len(df.columns) > 0:
+            col_combo.current(0)
+        
+        # Delimiter selection
+        ttk.Label(dialog, text="Delimiter:", font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        delimiter_var = tk.StringVar(value=" ")
+        delimiter_frame = ttk.Frame(dialog)
+        delimiter_frame.pack(pady=5)
+        ttk.Radiobutton(delimiter_frame, text="Space", variable=delimiter_var, value=" ").pack(side=tk.LEFT, padx=5)
+        ttk.Radiobutton(delimiter_frame, text="Comma", variable=delimiter_var, value=",").pack(side=tk.LEFT, padx=5)
+        ttk.Radiobutton(delimiter_frame, text="Hyphen", variable=delimiter_var, value="-").pack(side=tk.LEFT, padx=5)
+        
+        ttk.Label(dialog, text="Custom:", font=('Arial', 9)).pack(pady=5)
+        custom_delim = tk.StringVar()
+        ttk.Entry(dialog, textvariable=custom_delim, width=10).pack(pady=5)
+        
+        # Preview area
+        preview_text = scrolledtext.ScrolledText(dialog, height=6, width=50)
+        preview_text.pack(pady=10, padx=20)
+        preview_text.config(state=tk.DISABLED)
+        
+        def show_preview():
+            col = col_var.get()
+            delim = custom_delim.get() if custom_delim.get() else delimiter_var.get()
+            
+            preview_text.config(state=tk.NORMAL)
+            preview_text.delete(1.0, tk.END)
+            
+            try:
+                sample = df[col].head(3)
+                preview_text.insert(tk.END, f"Preview (delimiter: '{delim}'):\n\n")
+                for val in sample:
+                    if pd.notna(val):
+                        parts = str(val).split(delim)
+                        preview_text.insert(tk.END, f"{val} → {len(parts)} parts: {parts}\n")
+            except Exception as e:
+                preview_text.insert(tk.END, f"Error: {str(e)}")
+                
+            preview_text.config(state=tk.DISABLED)
+        
+        def apply_split():
+            col = col_var.get()
+            delim = custom_delim.get() if custom_delim.get() else delimiter_var.get()
+            
+            try:
+                # Use cleaning service
+                cleaned_df, num_cols = cleaning_service.split_column(
+                    df,
+                    col,
+                    delimiter=delim
+                )
+                
+                # Build status message
+                status_msg = f"Split {col} into {num_cols} columns"
+                
+                # Call callback
+                on_complete_callback(cleaned_df, col, num_cols, status_msg)
+                
+                messagebox.showinfo("Success", f"Split '{col}' into {num_cols} columns!")
+                dialog.destroy()
+                
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to split column:\n{str(e)}")
+        
+        # Action buttons
+        btn_frame = ttk.Frame(dialog)
+        btn_frame.pack(pady=10)
+        
+        ttk.Button(btn_frame, text="Preview", command=show_preview).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Split", command=apply_split, 
+                  style='Action.TButton').pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+    
+    @staticmethod
+    def show_merge_columns_dialog(parent, df, cleaning_service, on_complete_callback):
+        """
+        Show merge columns dialog
+        
+        Args:
+            parent: Parent window
+            df: DataFrame to process
+            cleaning_service: CleaningService instance
+            on_complete_callback: Callback function(cleaned_df, col1, col2, new_name, status_msg)
+        """
+        import tkinter.scrolledtext as scrolledtext
+        
+        dialog = tk.Toplevel(parent)
+        dialog.title("Merge Columns")
+        dialog.geometry("500x400")
+        
+        ttk.Label(dialog, text="Merge Multiple Columns", font=('Arial', 12, 'bold')).pack(pady=15)
+        
+        # Column selection
+        ttk.Label(dialog, text="Select first column:", font=('Arial', 10, 'bold')).pack(pady=5)
+        col1_var = tk.StringVar()
+        col1_combo = ttk.Combobox(dialog, textvariable=col1_var, values=list(df.columns), state='readonly', width=25)
+        col1_combo.pack(pady=5)
+        if len(df.columns) > 0:
+            col1_combo.current(0)
+        
+        ttk.Label(dialog, text="Select second column:", font=('Arial', 10, 'bold')).pack(pady=5)
+        col2_var = tk.StringVar()
+        col2_combo = ttk.Combobox(dialog, textvariable=col2_var, values=list(df.columns), state='readonly', width=25)
+        col2_combo.pack(pady=5)
+        if len(df.columns) > 1:
+            col2_combo.current(1)
+        
+        # Separator selection
+        ttk.Label(dialog, text="Separator:", font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        sep_var = tk.StringVar(value=" ")
+        sep_frame = ttk.Frame(dialog)
+        sep_frame.pack(pady=5)
+        ttk.Radiobutton(sep_frame, text="Space", variable=sep_var, value=" ").pack(side=tk.LEFT, padx=5)
+        ttk.Radiobutton(sep_frame, text="Comma", variable=sep_var, value=",").pack(side=tk.LEFT, padx=5)
+        ttk.Radiobutton(sep_frame, text="None", variable=sep_var, value="").pack(side=tk.LEFT, padx=5)
+        
+        ttk.Label(dialog, text="New column name:", font=('Arial', 9)).pack(pady=5)
+        new_name_var = tk.StringVar()
+        ttk.Entry(dialog, textvariable=new_name_var, width=30).pack(pady=5)
+        
+        # Preview area
+        preview_text = scrolledtext.ScrolledText(dialog, height=6, width=50)
+        preview_text.pack(pady=10, padx=20)
+        preview_text.config(state=tk.DISABLED)
+        
+        def show_preview():
+            col1 = col1_var.get()
+            col2 = col2_var.get()
+            sep = sep_var.get()
+            
+            preview_text.config(state=tk.NORMAL)
+            preview_text.delete(1.0, tk.END)
+            
+            try:
+                preview_text.insert(tk.END, f"Preview (separator: '{sep}'):\n\n")
+                for i in range(min(3, len(df))):
+                    val1 = str(df[col1].iloc[i])
+                    val2 = str(df[col2].iloc[i])
+                    merged = val1 + sep + val2
+                    preview_text.insert(tk.END, f"{val1} + {val2} → {merged}\n")
+            except Exception as e:
+                preview_text.insert(tk.END, f"Error: {str(e)}")
+                
+            preview_text.config(state=tk.DISABLED)
+        
+        def apply_merge():
+            col1 = col1_var.get()
+            col2 = col2_var.get()
+            sep = sep_var.get()
+            new_name = new_name_var.get() if new_name_var.get() else f"{col1}_{col2}"
+            
+            try:
+                # Use cleaning service
+                cleaned_df = cleaning_service.merge_columns(
+                    df,
+                    [col1, col2],
+                    separator=sep,
+                    new_column_name=new_name
+                )
+                
+                # Build status message
+                status_msg = f"Merged {col1} and {col2}"
+                
+                # Call callback
+                on_complete_callback(cleaned_df, col1, col2, new_name, status_msg)
+                
+                messagebox.showinfo("Success", f"Merged '{col1}' and '{col2}' into '{new_name}'!")
+                dialog.destroy()
+                
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to merge columns:\n{str(e)}")
+        
+        # Action buttons
+        btn_frame = ttk.Frame(dialog)
+        btn_frame.pack(pady=10)
+        
+        ttk.Button(btn_frame, text="Preview", command=show_preview).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Merge", command=apply_merge, 
+                  style='Action.TButton').pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+    
+    @staticmethod
     def confirm_trim_all_columns(parent, df, cleaning_service, on_complete_callback):
         """
         Confirm and trim all text columns
