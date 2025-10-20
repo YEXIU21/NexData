@@ -1736,93 +1736,23 @@ Would you like to recover this data?"""
         )
     
     def convert_data_types(self):
+        """Convert data types - delegates to dialog"""
         if self.df is None:
             messagebox.showwarning("Warning", "No data loaded!")
             return
-        dialog = tk.Toplevel(self.root)
-        dialog.title("Convert Data Types")
-        dialog.geometry("500x450")
-        ttk.Label(dialog, text="Convert Data Types", font=('Arial', 12, 'bold')).pack(pady=15)
-        ttk.Label(dialog, text="Select column:", font=('Arial', 10, 'bold')).pack(pady=5)
-        col_var = tk.StringVar()
-        col_combo = ttk.Combobox(dialog, textvariable=col_var, values=list(self.df.columns), state='readonly', width=25)
-        col_combo.pack(pady=5)
-        if len(self.df.columns) > 0:
-            col_combo.current(0)
-        current_type_label = ttk.Label(dialog, text="", font=('Arial', 9))
-        current_type_label.pack(pady=5)
-        def update_type(*args):
-            if col_var.get():
-                current_type_label.config(text=f"Current type: {self.df[col_var.get()].dtype}")
-        col_var.trace('w', update_type)
-        ttk.Label(dialog, text="Convert to:", font=('Arial', 10, 'bold')).pack(pady=(15,5))
-        type_var = tk.StringVar(value="number")
-        ttk.Radiobutton(dialog, text="Number (int/float)", variable=type_var, value="number").pack(anchor='w', padx=50)
-        ttk.Radiobutton(dialog, text="Text (string)", variable=type_var, value="text").pack(anchor='w', padx=50)
-        ttk.Radiobutton(dialog, text="Date/Time", variable=type_var, value="datetime").pack(anchor='w', padx=50)
-        ttk.Label(dialog, text="Handle errors:", font=('Arial', 9)).pack(pady=(10,5))
-        errors_var = tk.StringVar(value="coerce")
-        ttk.Radiobutton(dialog, text="Convert to NaN (recommended)", variable=errors_var, value="coerce").pack(anchor='w', padx=50)
-        ttk.Radiobutton(dialog, text="Keep original value", variable=errors_var, value="ignore").pack(anchor='w', padx=50)
-        preview_text = scrolledtext.ScrolledText(dialog, height=6, width=50)
-        preview_text.pack(pady=10, padx=20)
-        preview_text.config(state=tk.DISABLED)
-        def show_preview():
-            col = col_var.get()
-            target_type = type_var.get()
-            preview_text.config(state=tk.NORMAL)
-            preview_text.delete(1.0, tk.END)
-            try:
-                sample = self.df[col].head(5)
-                preview_text.insert(tk.END, "Preview (first 5 values):\n\n")
-                for val in sample:
-                    if pd.notna(val):
-                        try:
-                            if target_type == "number":
-                                new_val = pd.to_numeric(val, errors=errors_var.get())
-                            elif target_type == "text":
-                                new_val = str(val)
-                            else:
-                                new_val = pd.to_datetime(val, errors=errors_var.get())
-                            preview_text.insert(tk.END, f"{val} → {new_val}\n")
-                        except:
-                            preview_text.insert(tk.END, f"{val} → [conversion error]\n")
-            except Exception as e:
-                preview_text.insert(tk.END, f"Error: {str(e)}")
-            preview_text.config(state=tk.DISABLED)
-        def apply_conversion():
-            col = col_var.get()
-            target_type = type_var.get()
-            try:
-                # Map UI type names to service type names
-                type_mapping = {
-                    "number": "float",
-                    "text": "string",
-                    "datetime": "datetime"
-                }
-                service_type = type_mapping.get(target_type, target_type)
-                
-                # Use cleaning service
-                cleaned_df = self.cleaning_service.convert_data_types(
-                    self.df, 
-                    col, 
-                    service_type
-                )
-                self.df = cleaned_df
-                self.update_autosave_data()
-                
-                self.update_info_panel()
-                self.view_data()
-                self.update_status(f"Converted {col} to {target_type}")
-                messagebox.showinfo("Success", f"'{col}' converted to {target_type}!")
-                dialog.destroy()
-            except Exception as e:
-                messagebox.showerror("Error", f"Conversion failed:\n{str(e)}")
-        btn_frame = ttk.Frame(dialog)
-        btn_frame.pack(pady=10)
-        ttk.Button(btn_frame, text="Preview", command=show_preview).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_frame, text="Convert", command=apply_conversion, style='Action.TButton').pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+        
+        def on_complete(cleaned_df, col, target_type, status_msg):
+            """Callback when conversion complete"""
+            self.df = cleaned_df
+            self.update_autosave_data()
+            self.update_info_panel()
+            self.view_data()
+            self.update_status(status_msg)
+        
+        # Use dialog factory
+        CleaningDialogs.show_convert_data_types_dialog(
+            self.root, self.df, self.cleaning_service, on_complete
+        )
     
     def standardize_dates(self):
         if self.df is None:
