@@ -1698,49 +1698,23 @@ Would you like to recover this data?"""
         )
     
     def remove_empty(self):
+        """Remove empty rows/columns - delegates to dialog"""
         if self.df is None:
             messagebox.showwarning("Warning", "No data loaded!")
             return
-        dialog = tk.Toplevel(self.root)
-        dialog.title("Remove Empty Rows/Columns")
-        dialog.geometry("450x350")
-        ttk.Label(dialog, text="Remove Empty Rows/Columns", font=('Arial', 12, 'bold')).pack(pady=15)
-        empty_rows = self.df.isnull().all(axis=1).sum()
-        empty_cols = self.df.isnull().all(axis=0).sum()
-        info_text = scrolledtext.ScrolledText(dialog, height=10, width=50)
-        info_text.pack(pady=10, padx=20)
-        info_text.insert(tk.END, f"Dataset Analysis:\n\n")
-        info_text.insert(tk.END, f"Total rows: {len(self.df)}\n")
-        info_text.insert(tk.END, f"Total columns: {len(self.df.columns)}\n\n")
-        info_text.insert(tk.END, f"Empty rows: {empty_rows}\n")
-        info_text.insert(tk.END, f"Empty columns: {empty_cols}\n")
-        info_text.config(state=tk.DISABLED)
-        remove_rows_var = tk.BooleanVar(value=True)
-        remove_cols_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(dialog, text=f"Remove {empty_rows} empty row(s)", variable=remove_rows_var).pack(pady=5)
-        ttk.Checkbutton(dialog, text=f"Remove {empty_cols} empty column(s)", variable=remove_cols_var).pack(pady=5)
-        def apply_remove():
-            try:
-                # Use cleaning service
-                cleaned_df, rows_removed, cols_removed = self.cleaning_service.remove_empty_rows_columns(
-                    self.df,
-                    remove_rows=remove_rows_var.get(),
-                    remove_cols=remove_cols_var.get()
-                )
-                self.df = cleaned_df
-                self.update_autosave_data()
-                
-                self.update_info_panel()
-                self.view_data()
-                self.update_status(f"Removed {rows_removed} rows, {cols_removed} columns")
-                messagebox.showinfo("Success", f"Removed:\n{rows_removed} empty row(s)\n{cols_removed} empty column(s)")
-                dialog.destroy()
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to remove empty rows/columns: {str(e)}")
-        btn_frame = ttk.Frame(dialog)
-        btn_frame.pack(pady=15)
-        ttk.Button(btn_frame, text="Remove", command=apply_remove, style='Action.TButton').pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+        
+        def on_complete(cleaned_df, rows_removed, cols_removed, status_msg):
+            """Callback when empty rows/columns removed"""
+            self.df = cleaned_df
+            self.update_autosave_data()
+            self.update_info_panel()
+            self.view_data()
+            self.update_status(status_msg)
+        
+        # Use dialog factory
+        CleaningDialogs.show_remove_empty_dialog(
+            self.root, self.df, self.cleaning_service, on_complete
+        )
     
     def trim_all_columns(self):
         """Trim whitespace from all text columns - delegates to dialog"""
