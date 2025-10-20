@@ -575,3 +575,106 @@ class AnalysisDialogs:
                 messagebox.showerror("Error", f"Test failed: {str(e)}")
         
         ttk.Button(dialog, text="Run Test", command=run_test).pack(pady=10)
+    
+    @staticmethod
+    def show_ab_testing_dialog(parent, df):
+        """Show A/B testing dialog"""
+        dialog = tk.Toplevel(parent)
+        dialog.title("A/B Testing")
+        dialog.geometry("700x600")
+        
+        ttk.Label(dialog, text="A/B Test Analysis", font=('Arial', 14, 'bold')).pack(pady=10)
+        
+        test_type = tk.StringVar(value="conversion")
+        ttk.Radiobutton(dialog, text="Conversion Rate Test", variable=test_type, value="conversion").pack(pady=5)
+        ttk.Radiobutton(dialog, text="Continuous Metric Test (e.g., revenue, time)", variable=test_type, value="continuous").pack(pady=5)
+        
+        ttk.Label(dialog, text="\nFor Conversion Rate Test:", font=('Arial', 10, 'bold')).pack(pady=10)
+        
+        conv_frame = ttk.Frame(dialog)
+        conv_frame.pack(pady=5)
+        
+        ttk.Label(conv_frame, text="Control Conversions:").grid(row=0, column=0, sticky='e', padx=5)
+        control_conv_var = tk.StringVar(value="100")
+        ttk.Entry(conv_frame, textvariable=control_conv_var, width=15).grid(row=0, column=1)
+        
+        ttk.Label(conv_frame, text="Control Total:").grid(row=1, column=0, sticky='e', padx=5)
+        control_total_var = tk.StringVar(value="1000")
+        ttk.Entry(conv_frame, textvariable=control_total_var, width=15).grid(row=1, column=1)
+        
+        ttk.Label(conv_frame, text="Treatment Conversions:").grid(row=0, column=2, sticky='e', padx=5)
+        treatment_conv_var = tk.StringVar(value="120")
+        ttk.Entry(conv_frame, textvariable=treatment_conv_var, width=15).grid(row=0, column=3)
+        
+        ttk.Label(conv_frame, text="Treatment Total:").grid(row=1, column=2, sticky='e', padx=5)
+        treatment_total_var = tk.StringVar(value="1000")
+        ttk.Entry(conv_frame, textvariable=treatment_total_var, width=15).grid(row=1, column=3)
+        
+        ttk.Label(dialog, text="\nFor Continuous Metric Test (select columns):", font=('Arial', 10, 'bold')).pack(pady=10)
+        
+        cont_frame = ttk.Frame(dialog)
+        cont_frame.pack(pady=5)
+        
+        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+        
+        ttk.Label(cont_frame, text="Control Group Column:").grid(row=0, column=0, padx=5)
+        control_col_var = tk.StringVar(value=numeric_cols[0] if numeric_cols else "")
+        ttk.Combobox(cont_frame, textvariable=control_col_var, values=numeric_cols, width=20).grid(row=0, column=1)
+        
+        ttk.Label(cont_frame, text="Treatment Group Column:").grid(row=1, column=0, padx=5)
+        treatment_col_var = tk.StringVar(value=numeric_cols[1] if len(numeric_cols) > 1 else "")
+        ttk.Combobox(cont_frame, textvariable=treatment_col_var, values=numeric_cols, width=20).grid(row=1, column=1)
+        
+        result_text = scrolledtext.ScrolledText(dialog, height=12, width=80)
+        result_text.pack(pady=10)
+        
+        def run_ab_test():
+            from analysis.statistical_tests import ABTesting
+            
+            try:
+                result_text.delete(1.0, tk.END)
+                
+                if test_type.get() == "conversion":
+                    control_conv = int(control_conv_var.get())
+                    control_total = int(control_total_var.get())
+                    treatment_conv = int(treatment_conv_var.get())
+                    treatment_total = int(treatment_total_var.get())
+                    
+                    result = ABTesting.ab_test_conversion(control_conv, control_total, 
+                                                         treatment_conv, treatment_total)
+                    
+                    result_text.insert(tk.END, "A/B TEST RESULTS - Conversion Rate\n")
+                    result_text.insert(tk.END, "=" * 70 + "\n\n")
+                    result_text.insert(tk.END, f"Control Rate: {result['control_rate']:.2%}\n")
+                    result_text.insert(tk.END, f"Treatment Rate: {result['treatment_rate']:.2%}\n")
+                    result_text.insert(tk.END, f"Lift: {result['lift_percentage']:.2f}%\n\n")
+                    result_text.insert(tk.END, f"P-value: {result['p_value']:.4f}\n")
+                    result_text.insert(tk.END, f"Significant: {'YES' if result['significant'] else 'NO'}\n")
+                    result_text.insert(tk.END, f"Winner: {result['winner']}\n\n")
+                    result_text.insert(tk.END, f"📊 {result['interpretation']}")
+                
+                else:  # continuous
+                    control_col = control_col_var.get()
+                    treatment_col = treatment_col_var.get()
+                    
+                    if control_col not in df.columns or treatment_col not in df.columns:
+                        messagebox.showerror("Error", "Please select valid columns")
+                        return
+                    
+                    result = ABTesting.ab_test_continuous(df[control_col], df[treatment_col])
+                    
+                    result_text.insert(tk.END, "A/B TEST RESULTS - Continuous Metric\n")
+                    result_text.insert(tk.END, "=" * 70 + "\n\n")
+                    result_text.insert(tk.END, f"Control Mean: {result['control_mean']:.2f}\n")
+                    result_text.insert(tk.END, f"Treatment Mean: {result['treatment_mean']:.2f}\n")
+                    result_text.insert(tk.END, f"Lift: {result['lift_percentage']:.2f}%\n\n")
+                    result_text.insert(tk.END, f"P-value: {result['p_value']:.4f}\n")
+                    result_text.insert(tk.END, f"Cohen's d: {result['cohens_d']:.3f} ({result['effect_size']} effect)\n")
+                    result_text.insert(tk.END, f"Significant: {'YES' if result['significant'] else 'NO'}\n")
+                    result_text.insert(tk.END, f"Winner: {result['winner']}\n\n")
+                    result_text.insert(tk.END, f"📊 {result['interpretation']}")
+                
+            except Exception as e:
+                messagebox.showerror("Error", f"A/B test failed: {str(e)}")
+        
+        ttk.Button(dialog, text="Run A/B Test", command=run_ab_test).pack(pady=10)
