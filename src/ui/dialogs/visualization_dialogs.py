@@ -649,3 +649,146 @@ class VisualizationDialogs:
         ttk.Button(button_frame, text="Create Chart", command=plot, 
                   style='Action.TButton').pack(side=tk.LEFT, padx=5)
         ttk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+    
+    @staticmethod
+    def show_bar_chart_dialog(parent, df, create_plot_callback):
+        """Show bar chart creation dialog"""
+        import matplotlib.pyplot as plt
+        
+        dialog = tk.Toplevel(parent)
+        dialog.title("Create Bar Chart")
+        dialog.geometry("400x250")
+        
+        ttk.Label(dialog, text="X-axis (Categories):", font=('Arial', 11, 'bold')).pack(pady=5)
+        x_var = tk.StringVar(value=df.columns[0])
+        ttk.Combobox(dialog, textvariable=x_var, values=list(df.columns), 
+                     state='readonly', width=30).pack(pady=5)
+        
+        ttk.Label(dialog, text="Y-axis (Values):", font=('Arial', 11, 'bold')).pack(pady=5)
+        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+        y_var = tk.StringVar(value=numeric_cols[0] if numeric_cols else df.columns[0])
+        ttk.Combobox(dialog, textvariable=y_var, values=list(df.columns), 
+                     state='readonly', width=30).pack(pady=5)
+        
+        ttk.Label(dialog, text="Chart Title (optional):", font=('Arial', 11, 'bold')).pack(pady=5)
+        title_var = tk.StringVar(value="")
+        ttk.Entry(dialog, textvariable=title_var, width=33).pack(pady=5)
+        
+        def plot():
+            x_col = x_var.get()
+            y_col = y_var.get()
+            title = title_var.get() or f"{y_col} by {x_col}"
+            
+            try:
+                import pandas as pd
+                # Aggregate data if needed (group by x, sum y)
+                if df[x_col].duplicated().any():
+                    plot_data = df.groupby(x_col)[y_col].sum().sort_values(ascending=False)
+                else:
+                    plot_data = df.set_index(x_col)[y_col].sort_values(ascending=False)
+                
+                def plot_func(fig, ax):
+                    plot_data.plot(kind='bar', ax=ax, color='steelblue', edgecolor='black')
+                    ax.set_title(title, fontsize=14, fontweight='bold')
+                    ax.set_xlabel(x_col, fontsize=11)
+                    ax.set_ylabel(y_col, fontsize=11)
+                    ax.grid(True, alpha=0.3, axis='y')
+                    plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
+                
+                create_plot_callback(plot_func)
+                dialog.destroy()
+            except Exception as e:
+                messagebox.showerror("Error", f"Bar chart creation failed:\n{str(e)}")
+        
+        ttk.Button(dialog, text="Create Chart", command=plot).pack(pady=15)
+    
+    @staticmethod
+    def show_line_chart_dialog(parent, df, create_plot_callback):
+        """Show line chart creation dialog"""
+        import matplotlib.pyplot as plt
+        import pandas as pd
+        
+        dialog = tk.Toplevel(parent)
+        dialog.title("Create Line Chart")
+        dialog.geometry("400x250")
+        
+        ttk.Label(dialog, text="X-axis (usually date/time):", font=('Arial', 11, 'bold')).pack(pady=5)
+        x_var = tk.StringVar(value=df.columns[0])
+        ttk.Combobox(dialog, textvariable=x_var, values=list(df.columns), 
+                     state='readonly', width=30).pack(pady=5)
+        
+        ttk.Label(dialog, text="Y-axis (Values):", font=('Arial', 11, 'bold')).pack(pady=5)
+        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+        y_var = tk.StringVar(value=numeric_cols[0] if numeric_cols else df.columns[0])
+        ttk.Combobox(dialog, textvariable=y_var, values=list(df.columns), 
+                     state='readonly', width=30).pack(pady=5)
+        
+        ttk.Label(dialog, text="Chart Title (optional):", font=('Arial', 11, 'bold')).pack(pady=5)
+        title_var = tk.StringVar(value="")
+        ttk.Entry(dialog, textvariable=title_var, width=33).pack(pady=5)
+        
+        def plot():
+            x_col = x_var.get()
+            y_col = y_var.get()
+            title = title_var.get() or f"{y_col} over {x_col}"
+            
+            try:
+                # Try to convert x to datetime if it looks like dates
+                df_temp = df[[x_col, y_col]].copy()
+                try:
+                    df_temp[x_col] = pd.to_datetime(df_temp[x_col])
+                    df_temp = df_temp.sort_values(x_col)
+                except:
+                    pass  # Not a date column, use as is
+                
+                def plot_func(fig, ax):
+                    ax.plot(df_temp[x_col], df_temp[y_col], marker='o', linestyle='-', 
+                           linewidth=2, markersize=5, color='steelblue')
+                    ax.set_title(title, fontsize=14, fontweight='bold')
+                    ax.set_xlabel(x_col, fontsize=11)
+                    ax.set_ylabel(y_col, fontsize=11)
+                    ax.grid(True, alpha=0.3)
+                    plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
+                
+                create_plot_callback(plot_func)
+                dialog.destroy()
+            except Exception as e:
+                messagebox.showerror("Error", f"Line chart creation failed:\n{str(e)}")
+        
+        ttk.Button(dialog, text="Create Chart", command=plot).pack(pady=15)
+    
+    @staticmethod
+    def show_distribution_plot_dialog(parent, df, create_plot_callback):
+        """Show distribution plot dialog"""
+        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+        if not numeric_cols:
+            messagebox.showwarning("Warning", "No numeric columns!")
+            return
+        
+        dialog = tk.Toplevel(parent)
+        dialog.title("Distribution Plot")
+        ttk.Label(dialog, text="Select column:").pack(pady=10)
+        col_var = tk.StringVar(value=numeric_cols[0])
+        ttk.Combobox(dialog, textvariable=col_var, values=numeric_cols, state='readonly').pack(pady=5)
+        
+        def plot():
+            col = col_var.get()
+            def plot_func(fig, ax):
+                data = df[col].dropna()
+                # Histogram using matplotlib
+                ax.hist(data, bins=30, alpha=0.7, edgecolor='black', density=True, label='Histogram')
+                # KDE using scipy
+                from scipy.stats import gaussian_kde
+                kde = gaussian_kde(data)
+                x_range = np.linspace(data.min(), data.max(), 200)
+                ax.plot(x_range, kde(x_range), color='red', linewidth=2, label='KDE')
+                ax.set_title(f'Distribution of {col}', fontsize=14, fontweight='bold')
+                ax.set_xlabel(col)
+                ax.set_ylabel('Density')
+                ax.legend()
+                ax.grid(True, alpha=0.3)
+            
+            create_plot_callback(plot_func)
+            dialog.destroy()
+        
+        ttk.Button(dialog, text="Plot", command=plot).pack(pady=10)
