@@ -1190,6 +1190,128 @@ class CleaningDialogs:
         ttk.Button(btn_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
     
     @staticmethod
+    def show_remove_special_chars_dialog(parent, df, cleaning_service, on_complete_callback):
+        """
+        Show remove special characters dialog
+        
+        Args:
+            parent: Parent window
+            df: DataFrame to process
+            cleaning_service: CleaningService instance
+            on_complete_callback: Callback function(cleaned_df, col, status_msg)
+        """
+        import tkinter.scrolledtext as scrolledtext
+        import pandas as pd
+        import re
+        
+        text_cols = df.select_dtypes(include=['object']).columns.tolist()
+        if not text_cols:
+            messagebox.showinfo("Info", "No text columns found!")
+            return
+        
+        dialog = tk.Toplevel(parent)
+        dialog.title("Remove Special Characters")
+        dialog.geometry("500x450")
+        
+        ttk.Label(dialog, text="Remove Special Characters", font=('Arial', 12, 'bold')).pack(pady=15)
+        
+        # Column selection
+        ttk.Label(dialog, text="Select column:", font=('Arial', 10, 'bold')).pack(pady=5)
+        col_var = tk.StringVar()
+        col_combo = ttk.Combobox(dialog, textvariable=col_var, values=text_cols, state='readonly', width=25)
+        col_combo.pack(pady=5)
+        if text_cols:
+            col_combo.current(0)
+        
+        # Mode selection
+        ttk.Label(dialog, text="Remove:", font=('Arial', 10, 'bold')).pack(pady=(15,5))
+        mode_var = tk.StringVar(value="all")
+        ttk.Radiobutton(dialog, text="All special characters (!@#$%^&*)", variable=mode_var, value="all").pack(anchor='w', padx=50)
+        ttk.Radiobutton(dialog, text="Punctuation only (.,!?;:)", variable=mode_var, value="punct").pack(anchor='w', padx=50)
+        ttk.Radiobutton(dialog, text="Custom characters", variable=mode_var, value="custom").pack(anchor='w', padx=50)
+        
+        ttk.Label(dialog, text="Custom characters to remove:", font=('Arial', 9)).pack(pady=(10,5))
+        custom_var = tk.StringVar()
+        ttk.Entry(dialog, textvariable=custom_var, width=30).pack(pady=5)
+        
+        # Preview area
+        preview_text = scrolledtext.ScrolledText(dialog, height=6, width=50)
+        preview_text.pack(pady=10, padx=20)
+        preview_text.config(state=tk.DISABLED)
+        
+        def show_preview():
+            col = col_var.get()
+            mode = mode_var.get()
+            
+            preview_text.config(state=tk.NORMAL)
+            preview_text.delete(1.0, tk.END)
+            
+            try:
+                sample = df[col].head(5)
+                preview_text.insert(tk.END, "Preview (first 5 values):\n\n")
+                for val in sample:
+                    if pd.notna(val):
+                        if mode == "all":
+                            new_val = re.sub(r'[^a-zA-Z0-9\s]', '', str(val))
+                        elif mode == "punct":
+                            new_val = re.sub(r'[.,!?;:]', '', str(val))
+                        else:
+                            chars = custom_var.get()
+                            new_val = str(val)
+                            for char in chars:
+                                new_val = new_val.replace(char, '')
+                        preview_text.insert(tk.END, f"{val} → {new_val}\n")
+            except Exception as e:
+                preview_text.insert(tk.END, f"Error: {str(e)}")
+                
+            preview_text.config(state=tk.DISABLED)
+        
+        def apply_remove():
+            col = col_var.get()
+            mode = mode_var.get()
+            
+            try:
+                # Determine keep_alphanumeric based on mode
+                if mode == "all":
+                    keep_alphanumeric = True
+                    custom_chars = None
+                elif mode == "punct":
+                    keep_alphanumeric = False
+                    custom_chars = ".,!?;:"
+                else:
+                    keep_alphanumeric = False
+                    custom_chars = custom_var.get()
+                
+                # Use cleaning service
+                cleaned_df = cleaning_service.remove_special_characters(
+                    df,
+                    col,
+                    keep_alphanumeric=keep_alphanumeric,
+                    custom_chars=custom_chars
+                )
+                
+                # Build status message
+                status_msg = f"Removed special characters from {col}"
+                
+                # Call callback
+                on_complete_callback(cleaned_df, col, status_msg)
+                
+                messagebox.showinfo("Success", f"Special characters removed from '{col}'!")
+                dialog.destroy()
+                
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to remove special characters: {str(e)}")
+        
+        # Action buttons
+        btn_frame = ttk.Frame(dialog)
+        btn_frame.pack(pady=10)
+        
+        ttk.Button(btn_frame, text="Preview", command=show_preview).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Apply", command=apply_remove, 
+                  style='Action.TButton').pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+    
+    @staticmethod
     def confirm_trim_all_columns(parent, df, cleaning_service, on_complete_callback):
         """
         Confirm and trim all text columns
